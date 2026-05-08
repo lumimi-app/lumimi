@@ -1,0 +1,30 @@
+[package]
+name = "lumimi"
+version = "0.1.0"
+description = "A Tauri App"
+authors = ["yusak"]
+license = "GPL-3.0-only"
+repository = "https://github.com/lumimi-app/lumimi"
+homepage = "https://github.com/lumimi-app/lumimi"
+edition = "2021"
+
+[lib]
+name = "lumimi_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+whisper-rs = "0.16"
+whisper-rs-sys = "0.15"
+lindera = { version = "3", features = ["embed-ipadic"] }
+fontdb = "0.22"
+reqwest = { version = "0.12", features = ["stream"] }
+futures-util = "0.3"

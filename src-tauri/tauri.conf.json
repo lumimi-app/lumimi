@@ -1,0 +1,43 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Lumimi",
+  "version": "0.1.0",
+  "identifier": "com.yusak.lumimi",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:14200",
+    "frontendDist": "../src"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "title": "Lumimi",
+        "width": 1600,
+        "height": 900,
+        "resizable": true,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "resources": [
+      "bin/*",
+      "models/ggml-medium.bin",
+      "fonts/*",
+      "licenses/*"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  }
+}

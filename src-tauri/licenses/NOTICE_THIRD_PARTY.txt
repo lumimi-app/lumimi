@@ -1,0 +1,61 @@
+Lumimi Third-Party Notices
+
+This notice summarizes third-party components, model files, and fonts that may
+be bundled with Lumimi release builds. See the individual license files in this
+directory for full license texts where applicable.
+
+Whisper model files
+-------------------
+Lumimi uses Whisper-compatible ggml model files distributed through the
+ggerganov/whisper.cpp Hugging Face repository.
+
+Upstream:
+https://github.com/openai/whisper
+https://huggingface.co/ggerganov/whisper.cpp
+
+License:
+OpenAI Whisper code and model weights are released under the MIT License.
+
+FFmpeg
+------
+Lumimi uses FFmpeg for audio extraction, video metadata inspection, thumbnail
+fallback extraction, and subtitle rendering.
+
+Current development binary:
+ffmpeg version 8.1-full_build-www.gyan.dev
+
+The current development binary reports a GPL/static configuration including:
+--enable-gpl --enable-version3 --enable-static
+
+SHA256:
+D1E2A156261ECC675081943197A85F08F2868784A0AF499171EDE89353EDAD31
+
+Upstream:
+https://ffmpeg.org/
+https://www.gyan.dev/ffmpeg/builds/
+
+License status:
+The current development binary is treated as GPLv3 for release planning.
+
+License and source access:
+See GPL-3.0.txt and FFMPEG_SOURCE.txt in this directory.
+
+Lumimi license information and source code:
+https://github.com/lumimi-app/lumimi
+
+Bundled fonts
+-------------
+Lumimi bundles fonts for subtitle rendering. The corresponding license files
+are included in this directory:
+
+- LICENSE_851ChikaraYowaku.txt
+- LICENSE_NikumaruFont.txt
+- OFL_Anton.txt
+- OFL_GenEiKiwamiGo.txt
+- OFL_GenEiMGothic.txt
+- OFL_GenEiPOPle.txt
+- OFL_Montserrat.txt
+- OFL_NotoSansJP.txt
+- OFL_ZenKakuGothicNew.txt
+
+Do not sell bundled font files by themselves.

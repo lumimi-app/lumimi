@@ -1,0 +1,22 @@
+FFmpeg Source Access
+
+Lumimi bundles a Windows FFmpeg executable for local video processing.
+
+Bundled binary:
+- Path in source tree: src-tauri/bin/ffmpeg.exe
+- Version: ffmpeg version 8.1-full_build-www.gyan.dev
+- Build flags include: --enable-gpl --enable-version3 --enable-static
+- SHA256: D1E2A156261ECC675081943197A85F08F2868784A0AF499171EDE89353EDAD31
+
+Source and build information:
+- FFmpeg source downloads: https://ffmpeg.org/download.html
+- FFmpeg legal information: https://ffmpeg.org/legal.html
+- Gyan.dev Windows builds: https://www.gyan.dev/ffmpeg/builds/
+- Gyan.dev source links are listed on the builds page for the corresponding release/build.
+
+License:
+- The bundled FFmpeg binary is treated as GPLv3 for Lumimi release planning.
+- The GPLv3 license text is included as GPL-3.0.txt in this directory.
+
+Lumimi source code:
+- https://github.com/lumimi-app/lumimi

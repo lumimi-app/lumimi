@@ -1,0 +1,344 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Lumimi</title>
+    <link rel="stylesheet" href="styles.css" />
+    <link rel="icon" href="data:,">
+    <script type="module" src="/main.js" defer></script>
+  </head>
+
+  <body>
+    <div class="modal-overlay" id="license-overlay" style="display:none">
+      <div class="modal-box">
+        <div class="modal-title" data-i18n="licensesTitle">使用フォントのライセンス</div>
+        <div class="license-list" id="license-list"></div>
+        <button class="btn-secondary" id="btn-license-close" data-i18n="licenseClose">閉じる</button>
+      </div>
+    </div>
+
+    <div class="download-overlay" id="download-overlay" style="display:none">
+      <div class="download-box">
+        <div class="download-title" data-i18n="downloadTitle">Whisperモデルをダウンロード中...</div>
+        <div class="download-desc" id="download-desc" data-i18n="downloadDesc">しばらくお待ちください（約1.5 GB）</div>
+        <div class="progress-bar-track">
+          <div class="progress-bar-fill" id="download-fill"></div>
+        </div>
+        <div class="download-pct" id="download-pct">0%</div>
+      </div>
+    </div>
+    <div class="model-confirm-overlay" id="model-confirm-overlay" style="display:none">
+      <div class="model-confirm-box">
+        <div class="model-confirm-title" id="model-confirm-title">高精度モデルをダウンロードしますか？</div>
+        <div class="model-confirm-message" id="model-confirm-message"></div>
+        <div class="model-confirm-actions">
+          <button type="button" class="btn-secondary" id="btn-model-cancel">いいえ</button>
+          <button type="button" class="btn-primary" id="btn-model-confirm">はい</button>
+        </div>
+      </div>
+    </div>
+
+    <main class="app">
+      <header class="header">
+        <div class="header-left">
+          <div class="logo-box">✦</div>
+          <h1>Lumimi</h1>
+        </div>
+        <div class="header-right">
+          <button class="lang-toggle" id="lang-toggle" type="button">English</button>
+        </div>
+      </header>
+
+      <!-- ── Left panel: 1→2→3 fixed, no scroll ── -->
+      <div class="left-panel">
+        <section class="card upload-card">
+          <div class="section-title" data-i18n="sectionSelectVideo">1. 動画を選択</div>
+          <div class="upload-layout">
+            <section class="drop-zone" id="drop-zone">
+              <div class="drop-icon drop-icon--empty">+</div>
+              <svg class="drop-icon drop-icon--file" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="1" y="5" width="15" height="14" rx="2"/>
+                <polygon points="23,7 16,12 23,17" fill="currentColor" stroke="none"/>
+              </svg>
+              <div class="file-name" id="file-name" style="display:none"></div>
+              <div class="label" data-i18n="dropLabel">クリックまたはドラッグ&ドロップで動画を選択</div>
+            </section>
+          </div>
+        </section>
+
+        <section class="card preview-card">
+          <div class="preview-top">
+            <div class="section-title" data-i18n="sectionPreview">2. プレビュー</div>
+            <div class="preview-tools">
+              <div class="preview-aspect-toggle" aria-label="プレビュー比率">
+                <button class="preview-aspect-btn active" type="button" data-preview-aspect="landscape" aria-pressed="true" data-i18n="previewLandscape">横長 16:9</button>
+                <button class="preview-aspect-btn" type="button" data-preview-aspect="portrait" aria-pressed="false" data-i18n="previewPortrait">スマホ 9:16</button>
+              </div>
+              <button class="preview-expand" type="button" data-i18n="previewExpand">プレビューを拡大 ↗</button>
+            </div>
+          </div>
+          <canvas id="subtitle-preview" class="subtitle-preview"></canvas>
+        </section>
+
+        <section class="card action-card">
+          <div class="section-title" data-i18n="sectionAction">3. アクション</div>
+          <footer class="actions">
+            <button class="btn-primary" id="btn-generate" type="button" disabled data-i18n="generate">
+              字幕を生成
+            </button>
+            <button class="btn-secondary" id="btn-open-folder" type="button" data-i18n="openFolder">
+              出力フォルダを開く
+            </button>
+          </footer>
+          <section class="progress-area">
+            <div class="progress-bar-track">
+              <div class="progress-bar-fill" id="progress-fill"></div>
+            </div>
+            <div class="progress-label" id="progress-label"></div>
+          </section>
+          <div class="status" id="status"></div>
+        </section>
+      </div>
+
+      <div class="panel-resizer" id="panel-resizer" role="separator" aria-orientation="vertical" aria-label="左右パネル幅を変更"></div>
+
+      <!-- ── Right panel: settings, scrollable ── -->
+      <div class="right-panel">
+        <section class="settings-panel" id="settings-panel">
+          <div class="settings-grid">
+
+            <div class="settings-column">
+              <div class="setting-group">
+                <div class="group-title" data-i18n="groupPreset">プリセット</div>
+                <div class="preset-buttons" id="preset-buttons"></div>
+              </div>
+
+              <div class="setting-group">
+                <div class="group-title" data-i18n="groupBasic">基本設定</div>
+
+                <div class="setting-row">
+                  <span class="setting-label" data-i18n="labelLanguage">文字起こし言語</span>
+                  <select id="language-select">
+                    <option value="auto" data-i18n="autoLangOption">自動（99言語対応）</option>
+                    <option value="ja">日本語</option>
+                    <option value="en">English</option>
+                    <option value="zh">中文</option>
+                    <option value="ko">한국어</option>
+                    <option value="es">Español</option>
+                    <option value="fr">Français</option>
+                    <option value="de">Deutsch</option>
+                    <option value="pt">Português</option>
+                    <option value="it">Italiano</option>
+                    <option value="ru">Русский</option>
+                    <option value="ar">العربية</option>
+                    <option value="hi">हिन्दी</option>
+                  </select>
+                </div>
+
+                <div class="setting-row">
+                  <span class="setting-label" data-i18n="labelBilingual">バイリンガル字幕</span>
+                  <label class="checkbox-item" style="justify-self:start">
+                    <input type="checkbox" id="bilingual" />
+                    <span data-i18n="labelBilingualDesc">英語訳を同時表示（処理時間2倍）</span>
+                  </label>
+                </div>
+
+                <div class="setting-row">
+                  <span class="setting-label" data-i18n="labelModel">文字起こし精度</span>
+                  <div class="model-control-row">
+                    <select id="model-select"><option>読み込み中...</option></select>
+                    <button type="button" class="btn-folder-select model-download-btn" id="btn-download-high-model" style="display:none">
+                      高精度モデルを無料DL
+                    </button>
+                  </div>
+                </div>
+
+                <div class="setting-row">
+                  <span class="setting-label" data-i18n="labelPrompt">話しているテーマ・キーワード</span>
+                  <input type="text" id="initial-prompt" placeholder="例: ワンピース、マイクラ、料理レシピ" />
+                </div>
+
+                <div class="setting-row">
+                  <span class="setting-label" data-i18n="labelOutputFolder">出力先フォルダ</span>
+                  <div class="folder-row">
+                    <span class="folder-path" id="output-folder-path" data-i18n="folderDefault">動画フォルダ内の output/</span>
+                    <button type="button" id="btn-select-output-folder" class="btn-folder-select" data-i18n="folderSelect">選択</button>
+                  </div>
+                </div>
+
+                <div class="setting-row">
+                  <span class="setting-label" data-i18n="labelOutputName">出力ファイル名</span>
+                  <input type="text" id="output-filename" placeholder="_subtitled" />
+                </div>
+
+                <div class="setting-row">
+                  <span class="setting-label" data-i18n="labelOutputType">出力タイプ</span>
+                  <select id="output-type">
+                    <option value="video" data-i18n="outputTypeVideo">字幕焼き込み動画のみ</option>
+                    <option value="subtitle" data-i18n="outputTypeSubtitle">字幕ファイルのみ</option>
+                    <option value="both" data-i18n="outputTypeBoth">両方</option>
+                  </select>
+                </div>
+
+                <div class="setting-row" id="output-format-row">
+                  <span class="setting-label" data-i18n="labelOutputFormat">出力形式</span>
+                  <select id="output-format">
+                    <option value="mp4">MP4</option>
+                    <option value="mkv">MKV</option>
+                    <option value="mov">MOV</option>
+                    <option value="webm">WebM</option>
+                  </select>
+                </div>
+
+                <div class="setting-row" id="subtitle-formats-row" style="display:none">
+                  <span class="setting-label" data-i18n="labelSubtitleFormats">字幕形式</span>
+                  <div class="checkbox-group">
+                    <label class="checkbox-item"><input type="checkbox" id="fmt-srt" checked /> SRT</label>
+                    <label class="checkbox-item"><input type="checkbox" id="fmt-vtt" /> VTT</label>
+                    <label class="checkbox-item"><input type="checkbox" id="fmt-txt" /> TXT</label>
+                  </div>
+                </div>
+              </div>
+
+              <div class="setting-group">
+                <div class="group-title" data-i18n="groupDict">カスタム辞書</div>
+                <div class="dict-add-row">
+                  <input type="text" id="dict-from" class="dict-input" data-i18n-placeholder="dictFromPlaceholder" placeholder="音声" />
+                  <span class="dict-arrow">→</span>
+                  <input type="text" id="dict-to" class="dict-input" data-i18n-placeholder="dictToPlaceholder" placeholder="表示テキスト" />
+                  <button type="button" id="btn-dict-add" class="btn-folder-select" data-i18n="dictAdd">追加</button>
+                </div>
+                <div class="dict-list" id="dict-list"></div>
+              </div>
+            </div>
+
+            <div class="settings-column">
+              <div class="setting-group">
+                <div class="group-title" data-i18n="groupSubtitleDesign">字幕デザイン</div>
+
+                <div class="setting-row">
+                  <span class="setting-label" data-i18n="labelFont">フォント名</span>
+                  <select id="font-name"><option>読み込み中...</option></select>
+                </div>
+
+                <div class="setting-row">
+                  <span class="setting-label" data-i18n="labelFontSize">フォントサイズ</span>
+                  <div class="font-size-row">
+                    <button class="step-btn" type="button" id="font-minus">−</button>
+                    <input type="number" id="font-size" min="40" max="400" step="10" />
+                    <button class="step-btn" type="button" id="font-plus">＋</button>
+                    <label class="checkbox-item inline-checkbox">
+                      <input type="checkbox" id="font-bold" />
+                      <span data-i18n="labelBold">太字</span>
+                    </label>
+                    <label class="checkbox-item inline-checkbox">
+                      <input type="checkbox" id="vertical" />
+                      <span data-i18n="labelVertical">縦書き</span>
+                    </label>
+                  </div>
+                </div>
+
+                <div class="setting-row">
+                  <span class="setting-label" data-i18n="labelHighlightStyle">演出スタイル</span>
+                  <select id="highlight-style">
+                    <option value="none" data-i18n="styleNone">なし</option>
+                    <option value="color" data-i18n="styleColor">色変更</option>
+                    <option value="color_hold" data-i18n="styleColorHold">カラーキープ</option>
+                    <option value="fill" data-i18n="styleFill">カラオケfill</option>
+                    <option value="dim" data-i18n="styleDim">フォーカス</option>
+                    <option value="dim_hold" data-i18n="styleDimHold">フォーカスキープ</option>
+                    <option value="scale" data-i18n="styleScale">スケール</option>
+                    <option value="glow" data-i18n="styleGlow">グロー</option>
+                  </select>
+                </div>
+
+                <div class="setting-row">
+                  <span class="setting-label" data-i18n="labelDisplayMode">表示モード</span>
+                  <select id="display-mode">
+                    <option value="normal" data-i18n="displayNormal">通常</option>
+                    <option value="word_popup" data-i18n="displayWordPopup">ワードポップ</option>
+                    <option value="word_build" data-i18n="displayWordBuild">ワードビルド</option>
+                    <option value="word_build_left" data-i18n="displayWordBuildLeft">ワードビルド（左固定）</option>
+                    <option value="stacking" data-i18n="displayStacking">積み上げ</option>
+                  </select>
+                </div>
+
+                <div class="setting-row">
+                  <span class="setting-label" data-i18n="labelMaxChars">1行の最大文字数</span>
+                  <input type="number" id="max-chars-per-line" min="5" max="100" step="1" />
+                </div>
+
+                <div class="setting-row">
+                  <span class="setting-label" data-i18n="labelSimultaneousLines">同時表示行数</span>
+                  <select id="max-simultaneous-lines">
+                    <option value="1">1</option>
+                    <option value="2">2</option>
+                    <option value="3">3</option>
+                  </select>
+                </div>
+
+                <div class="setting-row">
+                  <span class="setting-label" data-i18n="labelSubtitlePosition">字幕位置</span>
+                  <select id="position-mode">
+                    <option value="auto" data-i18n="positionAuto">自動</option>
+                    <option value="manual" data-i18n="positionManual">手動</option>
+                  </select>
+                </div>
+
+                <div class="setting-row position-row" id="position-x-row">
+                  <span class="setting-label" data-i18n="labelPositionX">横位置</span>
+                  <div class="range-row">
+                    <input type="range" id="subtitle-x" min="0" max="100" step="1" />
+                    <span class="range-value" id="subtitle-x-value">50%</span>
+                  </div>
+                </div>
+
+                <div class="setting-row position-row" id="position-y-row">
+                  <span class="setting-label" data-i18n="labelPositionY">縦位置</span>
+                  <div class="range-row">
+                    <input type="range" id="subtitle-y" min="0" max="100" step="1" />
+                    <span class="range-value" id="subtitle-y-value">85%</span>
+                  </div>
+                </div>
+
+                <div class="setting-row">
+                  <span class="setting-label" data-i18n="labelHighlight">ハイライト色</span>
+                  <div class="color-row">
+                    <div class="color-preview" id="highlight-preview"></div>
+                    <input type="text" id="highlight-color" maxlength="12" />
+                  </div>
+                </div>
+
+                <div class="setting-row">
+                  <span class="setting-label" data-i18n="labelTextColor">文字色</span>
+                  <div class="color-row">
+                    <div class="color-preview" id="text-preview"></div>
+                    <input type="text" id="text-color" maxlength="12" />
+                  </div>
+                </div>
+
+                <div class="setting-row">
+                  <span class="setting-label" data-i18n="labelPreShow">先行表示 秒</span>
+                  <input type="number" id="pre-show" min="0" max="3" step="0.05" />
+                </div>
+
+                <div class="setting-row">
+                  <span class="setting-label" data-i18n="labelHold">表示保持 秒</span>
+                  <input type="number" id="hold-s" min="0" max="3" step="0.05" />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="license-row">
+            <button class="btn-licenses" id="btn-licenses" type="button" data-i18n="licenses">
+              ライセンス
+            </button>
+            <span class="copyright">© 2026 stk108</span>
+          </div>
+        </section>
+      </div>
+    </main>
+  </body>
+</html>
