@@ -4,11 +4,6 @@ This notice summarizes third-party components, model files, and fonts that may
 be bundled with Lumimi release builds. See the individual license files in this
 directory for full license texts where applicable.
 
-Dependency licenses
--------------------
-Lumimi's npm and Rust dependency license summary is recorded in:
-DEPENDENCIES_LICENSE_SUMMARY.txt
-
 Whisper model files
 -------------------
 Lumimi uses Whisper-compatible ggml model files distributed through the
