@@ -66,7 +66,7 @@ export const STRINGS = {
     downloadTitle: "Whisperモデルをダウンロード中...",
     downloadDesc: "しばらくお待ちください（約1.5 GB）",
     modelNotInstalled: "（未インストール）",
-    highModelUnavailableOption: "高精度モデル（低速・無料追加DL必要・約1.5GB）",
+    highModelUnavailableOption: "高精度（低速・無料追加DL必要・約1.5GB）",
     highModelDownloadButton: "高精度モデルを無料DL",
     highModelConfirmTitle: "高精度モデルをダウンロードしますか？",
     highModelConfirmMessage:
@@ -105,7 +105,7 @@ export const STRINGS = {
     groupPreset: "Presets",
     groupBasic: "Basic Settings",
     groupSubtitleDesign: "Subtitle Design",
-    labelLanguage: "Language",
+    labelLanguage: "Transcription language",
     autoLangOption: "Auto (99 languages)",
     labelModel: "Transcription Quality",
     labelPrompt: "Topic / Keywords",
@@ -161,7 +161,7 @@ export const STRINGS = {
     downloadTitle: "Downloading Whisper model...",
     downloadDesc: "Please wait (approx. 1.5 GB)",
     modelNotInstalled: " (not installed)",
-    highModelUnavailableOption: "High accuracy model (slow, free extra download, approx. 1.5 GB)",
+    highModelUnavailableOption: "High accuracy (slow, free extra download, approx. 1.5 GB)",
     highModelDownloadButton: "Free High Accuracy DL",
     highModelConfirmTitle: "Download the high accuracy model?",
     highModelConfirmMessage:

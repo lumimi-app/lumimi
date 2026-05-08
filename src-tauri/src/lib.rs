@@ -309,6 +309,7 @@ fn resolve_resource_dir(app: &tauri::AppHandle, dir_name: &str) -> Option<String
     if let Ok(current_dir) = std::env::current_dir() {
         bases.push(current_dir);
     }
+    #[cfg(debug_assertions)]
     bases.push(PathBuf::from(env!("CARGO_MANIFEST_DIR")));
 
     bases
@@ -340,6 +341,7 @@ fn resolve_resource_path(app: &tauri::AppHandle, configured_path: &str) -> Strin
     if let Ok(current_dir) = std::env::current_dir() {
         bases.push(current_dir);
     }
+    #[cfg(debug_assertions)]
     bases.push(PathBuf::from(env!("CARGO_MANIFEST_DIR")));
 
     bases
@@ -390,6 +392,7 @@ fn list_models(app: tauri::AppHandle) -> Vec<ModelInfo> {
     if let Ok(d) = std::env::current_dir() {
         bases.push(d);
     }
+    #[cfg(debug_assertions)]
     bases.push(PathBuf::from(env!("CARGO_MANIFEST_DIR")));
 
     KNOWN_MODELS

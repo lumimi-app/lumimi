@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-05-08
+
+### Fixed
+- リリースビルドが `CARGO_MANIFEST_DIR`（コンパイル時の開発ディレクトリパス）を参照し、開発環境のモデルファイルを「利用可能」として誤検出していた問題を修正（`#[cfg(debug_assertions)]` でデバッグビルド限定のフォールバックに変更）
+
+### Changed
+- 高精度モデル未ダウンロード時のドロップダウン表示を「高精度モデル（低速…）」→「高精度（低速…）」に変更
+- 英語版の文字起こし言語ラベルを "Language" → "Transcription language" に変更（アプリ言語設定との混同を防止）
+
 ### Added
 - BOOTH販売準備メモ、FFmpeg同梱販売チェック、第三者ライセンスnotice下書きを追加
 - FFmpeg同梱配布向けにGPLv3本文とFFmpegソース入手案内を追加

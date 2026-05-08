@@ -1,6 +1,6 @@
 [package]
 name = "lumimi"
-version = "0.1.0"
+version = "1.0.0"
 description = "A Tauri App"
 authors = ["yusak"]
 license = "GPL-3.0-only"
