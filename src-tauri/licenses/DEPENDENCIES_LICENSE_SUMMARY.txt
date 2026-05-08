@@ -1,0 +1,39 @@
+Lumimi Dependency License Summary
+
+This file summarizes the dependency license check performed for Lumimi release
+planning. It is not a replacement for the original upstream license texts.
+
+Lumimi application license:
+- GPL-3.0-only
+
+npm dependencies:
+- @tauri-apps/cli and optional platform packages are listed in package-lock.json
+  as Apache-2.0 OR MIT.
+
+Direct Rust dependencies:
+- anyhow: MIT OR Apache-2.0
+- fontdb: MIT
+- futures-util: MIT OR Apache-2.0
+- lindera: MIT
+- reqwest: MIT OR Apache-2.0
+- serde: MIT OR Apache-2.0
+- serde_json: MIT OR Apache-2.0
+- tauri: Apache-2.0 OR MIT
+- tauri-build: Apache-2.0 OR MIT
+- tauri-plugin-dialog: Apache-2.0 OR MIT
+- tauri-plugin-opener: Apache-2.0 OR MIT
+- whisper-rs: Unlicense
+- whisper-rs-sys: Unlicense
+
+Transitive Rust dependency scan:
+- Command used: cargo metadata --format-version 1 --locked
+- Missing license or license_file entries: 0
+- License families observed include MIT, Apache-2.0, BSD, ISC, Zlib,
+  Unlicense, MPL-2.0, Unicode-3.0, CDLA-Permissive-2.0, and permissive OR
+  combinations.
+- r-efi appears with MIT OR Apache-2.0 OR LGPL-2.1-or-later, so a permissive
+  option is available.
+
+Release note:
+- Re-run the dependency license scan before every paid release or dependency
+  update.

@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- npm/Rust依存関係のライセンス確認サマリーを追加
 - BOOTH販売準備メモ、FFmpeg同梱販売チェック、第三者ライセンスnotice下書きを追加
 - FFmpeg同梱配布向けにGPLv3本文とFFmpegソース入手案内を追加
 - Lumimi本体のGPLv3 `LICENSE` とGitHub公開準備メモを追加

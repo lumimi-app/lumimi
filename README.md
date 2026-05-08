@@ -42,6 +42,8 @@ Lumimi is licensed under the GNU General Public License v3.0 only. See
 
 Third-party components, model files, fonts, and FFmpeg have their own licenses
 and notices under `src-tauri/licenses/`.
+Dependency license summary is included in
+`src-tauri/licenses/DEPENDENCIES_LICENSE_SUMMARY.txt`.
 
 ## Source Code
 
