@@ -18,6 +18,18 @@ src-tauri/.cargo/
 src-tauri/models/
 src-tauri/bin/
 
+# Generated/source artwork not needed for the public source snapshot
+lumimiicon.png
+make_ico.py
+make_icons.py
+ARCHITECTURE.md
+src-tauri/icons/64x64.png
+src-tauri/icons/Square*.png
+src-tauri/icons/StoreLogo.png
+src-tauri/icons/icon.png
+src-tauri/icons/android/
+src-tauri/icons/ios/
+
 # Editor directories and files
 .vscode/
 .claude/
