@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+<!-- 調査中: リリースビルドでの Whisper 推論が開発ビルド比 ~6倍遅い問題（dev=9.8s, release=57s）。
+  - CMAKE_BUILD_TYPE=RelWithDebInfo env var → 効果なし（VS マルチコンフィグジェネレーターは CMAKE_BUILD_TYPE 無視）
+  - vendor/whisper-rs-sys-0.15.0 で config.profile("RelWithDebInfo") パッチ → 効果なし（57秒のまま）
+  - 次の仮説: devキャッシュが旧 whisper-rs-sys-0.13.x 由来の古いwhisper.cppを使用している可能性。
+    target/debug/build/whisper-rs-sys-*/out/whisper.lib のタイムスタンプを確認して検証すること。
+-->
+
 ## [1.0.0] - 2026-05-08
 
 ### Fixed

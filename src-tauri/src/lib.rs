@@ -78,8 +78,12 @@ fn run_pipeline(
     let fonts_dir = resolve_resource_dir(app, "fonts");
     let video_info = detect_video_info(video_path, &ffmpeg_path).ok();
 
+    eprintln!("[DIAG] model_path={}", model_path);
+    eprintln!("[DIAG] ffmpeg_path={}", ffmpeg_path);
+
     emit(app, "audio", 0.10);
     let samples = audio::extract_samples(video_path, &ffmpeg_path)?;
+    eprintln!("[DIAG] samples.len()={} ({:.1}s audio)", samples.len(), samples.len() as f64 / 16000.0);
 
     emit(app, "transcribe", 0.30);
     let (raw_segments, detected_lang, translation_segments) = if settings.bilingual {

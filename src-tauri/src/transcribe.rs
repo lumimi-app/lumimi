@@ -90,7 +90,11 @@ pub fn run(samples: &[f32], model_path: &str, initial_prompt: &str, language: &s
 
     let mut state = ctx.create_state().context("Failed to create whisper state")?;
 
+    let n_threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4).min(8) as i32;
+    eprintln!("[DIAG] n_threads={}", n_threads);
+
     let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
+    params.set_n_threads(n_threads);
     let lang_opt = if language == "auto" { None } else { Some(language) };
     params.set_language(lang_opt);
     params.set_token_timestamps(true);
@@ -100,7 +104,9 @@ pub fn run(samples: &[f32], model_path: &str, initial_prompt: &str, language: &s
         params.set_initial_prompt(initial_prompt);
     }
 
+    let t0 = std::time::Instant::now();
     state.full(params, samples).context("Whisper transcription failed")?;
+    eprintln!("[DIAG] whisper inference took {:.1}s", t0.elapsed().as_secs_f64());
 
     let detected_lang = get_lang_str(state.full_lang_id_from_state())
         .unwrap_or(language)
