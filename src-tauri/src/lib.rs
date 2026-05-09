@@ -222,14 +222,27 @@ fn run_pipeline(
     let require_subtitle = settings.output_type == "subtitle" || settings.output_type == "both";
 
     // Export subtitle files (SRT/VTT/TXT) from segment-level Whisper output.
+    // When bilingual mode is enabled, include the translated English line as well.
     if require_subtitle {
         for fmt in &settings.subtitle_formats {
             check_cancelled(&cancel)?;
             let sub_path = out_dir.join(format!("{}.{}", out_name, fmt));
             match fmt.as_str() {
-                "srt" => export::write_srt(&raw_segments, &sub_path.to_string_lossy())?,
-                "vtt" => export::write_vtt(&raw_segments, &sub_path.to_string_lossy())?,
-                "txt" => export::write_txt(&raw_segments, &sub_path.to_string_lossy())?,
+                "srt" => export::write_srt_with_translation(
+                    &raw_segments,
+                    translation_segments.as_deref(),
+                    &sub_path.to_string_lossy(),
+                )?,
+                "vtt" => export::write_vtt_with_translation(
+                    &raw_segments,
+                    translation_segments.as_deref(),
+                    &sub_path.to_string_lossy(),
+                )?,
+                "txt" => export::write_txt_with_translation(
+                    &raw_segments,
+                    translation_segments.as_deref(),
+                    &sub_path.to_string_lossy(),
+                )?,
                 _ => {}
             }
         }
