@@ -37,11 +37,25 @@ fn words_to_karaoke(words: &[Word], pre_show_s: f64, highlight_style: &str) -> S
         };
         let dur_cs = (dur_s * 100.0).round() as u64;
         match highlight_style {
-            "fill"  => { let _ = write!(result, "{{\\kf{}}}{}", dur_cs, w.text); }
-            "color_hold" | "dim_hold" => { let _ = write!(result, "{{\\k{}}}{}", dur_cs, w.text); }
-            "scale" => { let _ = write!(result, "{{\\fscx100\\fscy100\\k{}\\t(\\fscx115\\fscy115)}}{}", dur_cs, w.text); }
-            "glow"  => { let _ = write!(result, "{{\\blur0\\k{}\\t(\\blur5)}}{}", dur_cs, w.text); }
-            _       => { let _ = write!(result, "{{\\k{}}}{}", dur_cs, w.text); }
+            "fill" => {
+                let _ = write!(result, "{{\\kf{}}}{}", dur_cs, w.text);
+            }
+            "color_hold" | "dim_hold" => {
+                let _ = write!(result, "{{\\k{}}}{}", dur_cs, w.text);
+            }
+            "scale" => {
+                let _ = write!(
+                    result,
+                    "{{\\fscx100\\fscy100\\k{}\\t(\\fscx115\\fscy115)}}{}",
+                    dur_cs, w.text
+                );
+            }
+            "glow" => {
+                let _ = write!(result, "{{\\blur0\\k{}\\t(\\blur5)}}{}", dur_cs, w.text);
+            }
+            _ => {
+                let _ = write!(result, "{{\\k{}}}{}", dur_cs, w.text);
+            }
         }
     }
 
@@ -102,6 +116,109 @@ fn split_for_display_mode<'a>(
     }
 }
 
+fn emit_build_left_line(
+    content: &mut String,
+    line_words: &[Word],
+    hold_s: f64,
+    max_lines: usize,
+    manual_position: bool,
+    manual_x: u32,
+    manual_y: u32,
+    ends: &mut std::collections::VecDeque<f64>,
+) {
+    let last = line_words.last().expect("non-empty line");
+    for i in 0..line_words.len() {
+        let current = &line_words[i];
+        let next_start = line_words.get(i + 1).map(|w| w.start);
+        let diag_end = next_start.unwrap_or(last.end + hold_s);
+        let min_start = if ends.len() >= max_lines {
+            *ends.front().unwrap()
+        } else {
+            0.0
+        };
+        let diag_start = current.start.max(0.0).max(min_start);
+
+        let visible = words_to_text(&line_words[..=i]);
+        let invisible = words_to_text(&line_words[i + 1..]);
+        let text = if invisible.is_empty() {
+            visible
+        } else {
+            format!("{}{{\\alpha&HFF&}}{}", visible, invisible)
+        };
+        let pos_tag = if manual_position {
+            format!("{{\\pos({},{})}}", manual_x, manual_y)
+        } else {
+            String::new()
+        };
+        let _ = writeln!(
+            content,
+            "Dialogue: 0,{},{},Default,,0,0,0,,{}{}",
+            format_ass_time(diag_start),
+            format_ass_time(diag_end),
+            pos_tag,
+            text,
+        );
+        if ends.len() >= max_lines {
+            ends.pop_front();
+        }
+        ends.push_back(diag_end);
+    }
+}
+
+fn emit_build_line(
+    content: &mut String,
+    line_words: &[Word],
+    hold_s: f64,
+    max_lines: usize,
+    manual_position: bool,
+    manual_x: u32,
+    manual_y: u32,
+    is_vertical: bool,
+    play_res_x: u32,
+    margin_h: u32,
+    col_step: u32,
+    vertical_anchor_y: u32,
+    line_count: usize,
+    ends: &mut std::collections::VecDeque<f64>,
+) {
+    let last = line_words.last().expect("non-empty line");
+    for i in 0..line_words.len() {
+        let current = &line_words[i];
+        let next_start = line_words.get(i + 1).map(|w| w.start);
+        let diag_end = next_start.unwrap_or(last.end + hold_s);
+        let min_start = if ends.len() >= max_lines {
+            *ends.front().unwrap()
+        } else {
+            0.0
+        };
+        let diag_start = current.start.max(0.0).max(min_start);
+        let text = words_to_text(&line_words[..=i]);
+
+        let pos_tag = if manual_position {
+            format!("{{\\pos({},{})}}", manual_x, manual_y)
+        } else if is_vertical {
+            let col = line_count % max_lines;
+            let x =
+                (play_res_x as i32 - margin_h as i32 - col as i32 * col_step as i32).max(0);
+            format!("{{\\pos({},{})}}", x, vertical_anchor_y)
+        } else {
+            String::new()
+        };
+        let _ = writeln!(
+            content,
+            "Dialogue: 0,{},{},Default,,0,0,0,,{}{}",
+            format_ass_time(diag_start),
+            format_ass_time(diag_end),
+            pos_tag,
+            text,
+        );
+        if ends.len() >= max_lines {
+            ends.pop_front();
+        }
+        ends.push_back(diag_end);
+    }
+}
+
 pub fn generate(
     segments: &[(Segment, Vec<Word>)],
     output_path: &str,
@@ -143,11 +260,12 @@ pub fn generate(
         ((settings.play_res_x - 2 * margin_h) / settings.font_size).max(5) as usize
     };
     // Dim styles: unspoken words rendered at 50% opacity via SecondaryColour alpha.
-    let secondary_color = if settings.highlight_style == "dim" || settings.highlight_style == "dim_hold" {
-        with_alpha(&settings.text_color, 0x80)
-    } else {
-        settings.text_color.clone()
-    };
+    let secondary_color =
+        if settings.highlight_style == "dim" || settings.highlight_style == "dim_hold" {
+            with_alpha(&settings.text_color, 0x80)
+        } else {
+            settings.text_color.clone()
+        };
     // Alignment: vertical→9 (top-right), stacking horizontal→8 (top-center), normal→2 (bottom-center).
     // NOTE: Do NOT use the "@" font prefix for vertical mode. The "@" variant contains pre-rotated
     // glyphs (90° CW) designed for Windows GDI vertical layout; libass renders them as horizontal
@@ -166,7 +284,11 @@ pub fn generate(
     let alignment = if manual_position {
         5u32
     } else if settings.vertical {
-        if vertical_centered { 6u32 } else { 9u32 }
+        if vertical_centered {
+            6u32
+        } else {
+            9u32
+        }
     } else if stacking_mode {
         8u32
     } else {
@@ -232,14 +354,21 @@ pub fn generate(
     let mut line_count: usize = 0;
 
     // Two-pass state for vertical stacking with era resets.
-    struct VertColEvent { diag_start: f64, col_x: u32, start_y: u32, body: String, era: usize }
+    struct VertColEvent {
+        diag_start: f64,
+        col_x: u32,
+        start_y: u32,
+        body: String,
+        era: usize,
+    }
     let mut vert_cols: Vec<VertColEvent> = Vec::new();
     let mut vert_era = 0usize;
     let mut vert_era_line = 0usize;
 
     // Stacking mode: each line stays visible until the end of the video.
     let stack_end = if stacking_mode {
-        segments.iter()
+        segments
+            .iter()
             .flat_map(|(_, words)| words.iter())
             .map(|w| w.end)
             .fold(0.0f64, f64::max)
@@ -264,80 +393,37 @@ pub fn generate(
             if word_build_left_mode && !stacking_mode {
                 // Fixed-position build: write the full line each step but hide future words
                 // with \alpha&HFF& so ASS always centers on the complete line length.
-                for i in 0..line_words.len() {
-                    let current = &line_words[i];
-                    let next_start = line_words.get(i + 1).map(|w| w.start);
-                    let diag_end = next_start.unwrap_or(last.end + settings.hold_s);
-                    let min_start = if ends.len() >= max_lines { *ends.front().unwrap() } else { 0.0 };
-                    let diag_start = current.start.max(0.0).max(min_start);
-
-                    let visible = words_to_text(&line_words[..=i]);
-                    let invisible = words_to_text(&line_words[i + 1..]);
-                    let text = if invisible.is_empty() {
-                        visible
-                    } else {
-                        format!("{}{{\\alpha&HFF&}}{}", visible, invisible)
-                    };
-                    let pos_tag = if manual_position {
-                        format!("{{\\pos({},{})}}", manual_x, manual_y)
-                    } else {
-                        String::new()
-                    };
-
-                    let _ = writeln!(
-                        content,
-                        "Dialogue: 0,{},{},Default,,0,0,0,,{}{}",
-                        format_ass_time(diag_start),
-                        format_ass_time(diag_end),
-                        pos_tag,
-                        text,
-                    );
-
-                    if ends.len() >= max_lines {
-                        ends.pop_front();
-                    }
-                    ends.push_back(diag_end);
-                }
-
+                emit_build_left_line(
+                    &mut content,
+                    line_words,
+                    settings.hold_s,
+                    max_lines,
+                    manual_position,
+                    manual_x,
+                    manual_y,
+                    &mut ends,
+                );
                 line_count += 1;
                 continue;
             }
 
             if word_build_mode && !stacking_mode {
-                for i in 0..line_words.len() {
-                    let current = &line_words[i];
-                    let next_start = line_words.get(i + 1).map(|w| w.start);
-                    let diag_end = next_start.unwrap_or(last.end + settings.hold_s);
-                    let min_start = if ends.len() >= max_lines { *ends.front().unwrap() } else { 0.0 };
-                    let diag_start = current.start.max(0.0).max(min_start);
-                    let text = words_to_text(&line_words[..=i]);
-
-                    let pos_tag = if manual_position {
-                        format!("{{\\pos({},{})}}", manual_x, manual_y)
-                    } else if settings.vertical {
-                        let col = line_count % max_lines;
-                        let x = (settings.play_res_x as i32 - margin_h as i32
-                            - col as i32 * col_step as i32).max(0);
-                        format!("{{\\pos({},{})}}", x, vertical_anchor_y)
-                    } else {
-                        String::new()
-                    };
-
-                    let _ = writeln!(
-                        content,
-                        "Dialogue: 0,{},{},Default,,0,0,0,,{}{}",
-                        format_ass_time(diag_start),
-                        format_ass_time(diag_end),
-                        pos_tag,
-                        text,
-                    );
-
-                    if ends.len() >= max_lines {
-                        ends.pop_front();
-                    }
-                    ends.push_back(diag_end);
-                }
-
+                emit_build_line(
+                    &mut content,
+                    line_words,
+                    settings.hold_s,
+                    max_lines,
+                    manual_position,
+                    manual_x,
+                    manual_y,
+                    settings.vertical,
+                    settings.play_res_x,
+                    margin_h,
+                    col_step,
+                    vertical_anchor_y,
+                    line_count,
+                    &mut ends,
+                );
                 line_count += 1;
                 continue;
             }
@@ -349,7 +435,9 @@ pub fn generate(
             // matching the canvas preview's per-character y-offset approach.
             if stacking_mode && settings.vertical {
                 // Determine raw x before clamping to detect off-screen columns.
-                let col_x_base = if manual_position { manual_x as i32 } else {
+                let col_x_base = if manual_position {
+                    manual_x as i32
+                } else {
                     settings.play_res_x as i32 - margin_h as i32
                 };
                 let col_x_raw = col_x_base - vert_era_line as i32 * col_step as i32;
@@ -360,7 +448,11 @@ pub fn generate(
                     vert_era_line = 0;
                 }
                 let col_x = (col_x_base - vert_era_line as i32 * col_step as i32).max(0) as u32;
-                let anchor_y = if manual_position { manual_y } else { vertical_anchor_y };
+                let anchor_y = if manual_position {
+                    manual_y
+                } else {
+                    vertical_anchor_y
+                };
                 let diag_start = first.start.max(0.0);
                 let text = words_to_text(line_words);
                 let chars: Vec<char> = text.chars().collect();
@@ -368,8 +460,18 @@ pub fn generate(
                 let char_h = settings.font_size + settings.font_size / 5;
                 let block_h = n * char_h;
                 let start_y = (anchor_y as i32 - block_h as i32 / 2).max(0) as u32;
-                let body: String = chars.iter().map(|c| c.to_string()).collect::<Vec<_>>().join("\\N");
-                vert_cols.push(VertColEvent { diag_start, col_x, start_y, body, era: vert_era });
+                let body: String = chars
+                    .iter()
+                    .map(|c| c.to_string())
+                    .collect::<Vec<_>>()
+                    .join("\\N");
+                vert_cols.push(VertColEvent {
+                    diag_start,
+                    col_x,
+                    start_y,
+                    body,
+                    era: vert_era,
+                });
                 vert_era_line += 1;
                 line_count += 1;
                 continue;
@@ -384,12 +486,19 @@ pub fn generate(
                 } else {
                     let ds = (first.start - settings.pre_show_s).max(0.0);
                     let actual_pre = (first.start - ds).max(0.0);
-                    (ds, words_to_karaoke(line_words, actual_pre, &settings.highlight_style))
+                    (
+                        ds,
+                        words_to_karaoke(line_words, actual_pre, &settings.highlight_style),
+                    )
                 };
                 (ds, stack_end, karo)
             } else {
                 let diag_end = last.end + settings.hold_s;
-                let min_start = if ends.len() >= max_lines { *ends.front().unwrap() } else { 0.0 };
+                let min_start = if ends.len() >= max_lines {
+                    *ends.front().unwrap()
+                } else {
+                    0.0
+                };
                 let (ds, karo) = if settings.highlight_style == "none" {
                     let ds = first.start.max(0.0).max(min_start);
                     let text = words_to_text(line_words);
@@ -398,7 +507,10 @@ pub fn generate(
                     let natural_start = (first.start - settings.pre_show_s).max(0.0);
                     let ds = natural_start.max(min_start);
                     let actual_pre = (first.start - ds).max(0.0);
-                    (ds, words_to_karaoke(line_words, actual_pre, &settings.highlight_style))
+                    (
+                        ds,
+                        words_to_karaoke(line_words, actual_pre, &settings.highlight_style),
+                    )
                 };
                 (ds, diag_end, karo)
             };
@@ -417,8 +529,10 @@ pub fn generate(
                 format!("{{\\pos({},{})}}", manual_x, manual_y)
             } else if stacking_mode && settings.vertical {
                 // Stacking columns right to left
-                let x = (settings.play_res_x as i32 - margin_h as i32
-                    - line_count as i32 * col_step as i32).max(0);
+                let x = (settings.play_res_x as i32
+                    - margin_h as i32
+                    - line_count as i32 * col_step as i32)
+                    .max(0);
                 format!("{{\\pos({},{})}}", x, vertical_anchor_y)
             } else if stacking_mode {
                 // Stacking rows top to bottom
@@ -427,8 +541,9 @@ pub fn generate(
             } else if settings.vertical {
                 // Normal vertical: cycle through columns
                 let col = line_count % max_lines;
-                let x = (settings.play_res_x as i32 - margin_h as i32
-                    - col as i32 * col_step as i32).max(0);
+                let x =
+                    (settings.play_res_x as i32 - margin_h as i32 - col as i32 * col_step as i32)
+                        .max(0);
                 format!("{{\\pos({},{})}}", x, vertical_anchor_y)
             } else {
                 String::new()
@@ -491,4 +606,76 @@ pub fn generate(
 
     fs::write(output_path, content)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tokenize::Word;
+
+    fn w(text: &str, start: f64, end: f64) -> Word {
+        Word { text: text.to_string(), start, end }
+    }
+
+    #[test]
+    fn format_ass_time_zero() {
+        assert_eq!(format_ass_time(0.0), "0:00:00.00");
+    }
+
+    #[test]
+    fn format_ass_time_one_hour() {
+        assert_eq!(format_ass_time(3661.5), "1:01:01.50");
+    }
+
+    #[test]
+    fn format_ass_time_negative_clamps() {
+        assert_eq!(format_ass_time(-1.0), "0:00:00.00");
+    }
+
+    #[test]
+    fn with_alpha_sets_alpha_bytes() {
+        assert_eq!(with_alpha("&H00FFFFFF&", 0x80), "&H80FFFFFF&");
+        assert_eq!(with_alpha("&H00000000&", 0xFF), "&HFF000000&");
+    }
+
+    #[test]
+    fn with_alpha_short_passes_through() {
+        let short = "&H000000&";
+        assert_eq!(with_alpha(short, 0x80), short);
+    }
+
+    #[test]
+    fn split_into_lines_single_chunk_under_limit() {
+        let words = vec![w("Hello", 0.0, 0.5), w("World", 0.5, 1.0)];
+        let lines = split_into_lines(&words, 20);
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].len(), 2);
+    }
+
+    #[test]
+    fn split_into_lines_breaks_at_max_chars() {
+        // "Hello"=5, "World"=5, "Foo"=3 with max_chars=6
+        let words = vec![w("Hello", 0.0, 0.5), w("World", 0.5, 1.0), w("Foo", 1.0, 1.5)];
+        let lines = split_into_lines(&words, 6);
+        assert_eq!(lines.len(), 3);
+        assert_eq!(lines[0][0].text, "Hello");
+        assert_eq!(lines[1][0].text, "World");
+        assert_eq!(lines[2][0].text, "Foo");
+    }
+
+    #[test]
+    fn words_to_karaoke_starts_with_pre_tag() {
+        let words = vec![w("A", 0.5, 1.0), w("B", 1.0, 1.5)];
+        let result = words_to_karaoke(&words, 0.0, "color");
+        assert!(result.starts_with("{\\k0}"), "got: {result}");
+        assert!(result.contains("A"));
+        assert!(result.contains("B"));
+    }
+
+    #[test]
+    fn words_to_karaoke_fill_uses_kf_tag() {
+        let words = vec![w("A", 0.0, 0.5), w("B", 0.5, 1.0)];
+        let result = words_to_karaoke(&words, 0.0, "fill");
+        assert!(result.contains("\\kf"), "expected \\kf tag, got: {result}");
+    }
 }

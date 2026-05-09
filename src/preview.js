@@ -152,12 +152,12 @@ function _pvDraw(ctx, W, H, s) {
   const hc = assToCss(s.highlight_color);
   const sty = s.highlight_style;
   const marginV = getPreviewMarginV(H, s);
-  if (!s.vertical && !s.stacking && s.display_mode === "word_popup") _pvSingle(ctx, W, H, sz, tc, hc, sty, words, marginV);
-  else if (!s.vertical && !s.stacking && s.display_mode === "word_build") _pvBuild(ctx, W, H, sz, tc, hc, sty, words, marginV);
-  else if (!s.vertical && !s.stacking && s.display_mode === "word_build_left") _pvBuildLeft(ctx, W, H, sz, tc, hc, sty, words, marginV);
-  else if (s.vertical) _pvVert(ctx, W, H, sz, tc, hc, sty, words, s.stacking);
-  else if (s.stacking) _pvStack(ctx, W, H, sz, tc, hc, sty, words);
-  else _pvHoriz(ctx, W, H, sz, tc, hc, sty, words, marginV);
+  if (!s.vertical && !s.stacking && s.display_mode === "word_popup") _pvSingle(ctx, W, H, sz, tc, hc, sty, words, marginV, s);
+  else if (!s.vertical && !s.stacking && s.display_mode === "word_build") _pvBuild(ctx, W, H, sz, tc, hc, sty, words, marginV, s);
+  else if (!s.vertical && !s.stacking && s.display_mode === "word_build_left") _pvBuildLeft(ctx, W, H, sz, tc, hc, sty, words, marginV, s);
+  else if (s.vertical) _pvVert(ctx, W, H, sz, tc, hc, sty, words, s.stacking, s);
+  else if (s.stacking) _pvStack(ctx, W, H, sz, tc, hc, sty, words, s);
+  else _pvHoriz(ctx, W, H, sz, tc, hc, sty, words, marginV, s);
 }
 
 function _pvBorder(ctx, text, x, y, sz) {
@@ -233,11 +233,11 @@ function _pvText(ctx, text, x, y, sz, isActive, sty, tc, hc, fillProgress = 0) {
   ctx.restore();
 }
 
-function _pvHoriz(ctx, W, H, sz, tc, hc, sty, words, marginV) {
+function _pvHoriz(ctx, W, H, sz, tc, hc, sty, words, marginV, s) {
   const gap = Math.round(sz * 0.3);
   const widths = words.map(w => _pvMeasure(ctx, w));
   const totalW = widths.reduce((a, b) => a + b, 0) + gap * (words.length - 1);
-  const manualPos = isManualSubtitlePosition(getSettings()) ? getManualPreviewPosition(W, H, getSettings()) : null;
+  const manualPos = isManualSubtitlePosition(s) ? getManualPreviewPosition(W, H, s) : null;
   let x = manualPos ? manualPos.x - totalW / 2 : Math.max(W * 0.05, (W - totalW) / 2);
   const y = manualPos ? manualPos.y : H - marginV;
   words.forEach((word, i) => {
@@ -251,7 +251,7 @@ function _pvHoriz(ctx, W, H, sz, tc, hc, sty, words, marginV) {
   });
 }
 
-function _pvSingle(ctx, W, H, sz, tc, hc, sty, words, marginV) {
+function _pvSingle(ctx, W, H, sz, tc, hc, sty, words, marginV, s) {
   const word = words[_pvIdx % words.length];
   const ww = _pvMeasure(ctx, word);
   const fillProgress = sty === "fill"
@@ -259,16 +259,16 @@ function _pvSingle(ctx, W, H, sz, tc, hc, sty, words, marginV) {
     : sty === "color_hold" || sty === "dim_hold"
       ? 1
     : 0;
-  const manualPos = isManualSubtitlePosition(getSettings()) ? getManualPreviewPosition(W, H, getSettings()) : null;
+  const manualPos = isManualSubtitlePosition(s) ? getManualPreviewPosition(W, H, s) : null;
   _pvText(ctx, word, (manualPos ? manualPos.x : W / 2) - ww / 2, manualPos ? manualPos.y : H - marginV, sz, true, sty, tc, hc, fillProgress);
 }
 
-function _pvBuild(ctx, W, H, sz, tc, hc, sty, words, marginV) {
+function _pvBuild(ctx, W, H, sz, tc, hc, sty, words, marginV, s) {
   const visible = words.slice(0, _pvIdx + 1);
   const gap = Math.round(sz * 0.3);
   const widths = visible.map((word) => _pvMeasure(ctx, word));
   const totalW = widths.reduce((a, b) => a + b, 0) + gap * Math.max(0, visible.length - 1);
-  const manualPos = isManualSubtitlePosition(getSettings()) ? getManualPreviewPosition(W, H, getSettings()) : null;
+  const manualPos = isManualSubtitlePosition(s) ? getManualPreviewPosition(W, H, s) : null;
   let x = manualPos ? manualPos.x - totalW / 2 : Math.max(W * 0.05, (W - totalW) / 2);
   const y = manualPos ? manualPos.y : H - marginV;
   visible.forEach((word, i) => {
@@ -282,13 +282,13 @@ function _pvBuild(ctx, W, H, sz, tc, hc, sty, words, marginV) {
   });
 }
 
-function _pvBuildLeft(ctx, W, H, sz, tc, hc, sty, words, marginV) {
+function _pvBuildLeft(ctx, W, H, sz, tc, hc, sty, words, marginV, s) {
   const gap = Math.round(sz * 0.3);
   const allWidths = words.map((word) => _pvMeasure(ctx, word));
   const totalFullW = allWidths.reduce((a, b) => a + b, 0) + gap * Math.max(0, words.length - 1);
   // Anchor at the left edge of the centered full line (same as where the first word
   // would sit once the whole line is displayed).
-  const manualPos = isManualSubtitlePosition(getSettings()) ? getManualPreviewPosition(W, H, getSettings()) : null;
+  const manualPos = isManualSubtitlePosition(s) ? getManualPreviewPosition(W, H, s) : null;
   const leftX = manualPos ? manualPos.x - totalFullW / 2 : Math.max(W * 0.05, (W - totalFullW) / 2);
   const y = manualPos ? manualPos.y : H - marginV;
   const visible = words.slice(0, _pvIdx + 1);
@@ -304,9 +304,9 @@ function _pvBuildLeft(ctx, W, H, sz, tc, hc, sty, words, marginV) {
   });
 }
 
-function _pvStack(ctx, W, H, sz, tc, hc, sty, words) {
+function _pvStack(ctx, W, H, sz, tc, hc, sty, words, s) {
   const lineH = Math.round(sz * 1.4);
-  const manualPos = isManualSubtitlePosition(getSettings()) ? getManualPreviewPosition(W, H, getSettings()) : null;
+  const manualPos = isManualSubtitlePosition(s) ? getManualPreviewPosition(W, H, s) : null;
   const startY = manualPos ? manualPos.y : Math.round(H * 0.12) + sz;
   words.slice(0, _pvIdx + 1).forEach((word, i) => {
     const ww = _pvMeasure(ctx, word);
@@ -319,7 +319,7 @@ function _pvStack(ctx, W, H, sz, tc, hc, sty, words) {
   });
 }
 
-function _pvVert(ctx, W, H, sz, tc, hc, sty, words, stacking) {
+function _pvVert(ctx, W, H, sz, tc, hc, sty, words, stacking, s) {
   ctx.textBaseline = "top";
   const marginH = Math.round(W / 10);
   const colStep = Math.round(sz * 1.4);
@@ -327,8 +327,7 @@ function _pvVert(ctx, W, H, sz, tc, hc, sty, words, stacking) {
   const visible = stacking ? words.slice(0, _pvIdx + 1) : words;
   const maxChars = Math.max(1, ...visible.map((word) => [...word].length));
   const blockH = maxChars * charH;
-  const settings = getSettings();
-  const manualPos = isManualSubtitlePosition(settings) ? getManualPreviewPosition(W, H, settings) : null;
+  const manualPos = isManualSubtitlePosition(s) ? getManualPreviewPosition(W, H, s) : null;
   const startY = manualPos
     ? Math.max(0, Math.round(manualPos.y - blockH / 2))
     : _pvAspect === "portrait"

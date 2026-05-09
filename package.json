@@ -1,7 +1,8 @@
 {
   "name": "lumimi",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.0.0",
+  "author": "stk108",
   "license": "GPL-3.0-only",
   "homepage": "https://github.com/lumimi-app/lumimi",
   "repository": {

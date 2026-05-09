@@ -1,8 +1,21 @@
 use anyhow::{Context, Result};
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
+use std::time::Duration;
 
-pub fn run(video_path: &str, ass_path: &str, output_path: &str, ffmpeg_path: &str, fonts_dir: Option<&str>, output_format: &str) -> Result<()> {
+pub fn run(
+    video_path: &str,
+    ass_path: &str,
+    output_path: &str,
+    ffmpeg_path: &str,
+    fonts_dir: Option<&str>,
+    output_format: &str,
+    cancel: Arc<AtomicBool>,
+) -> Result<()> {
     let ass_p = Path::new(ass_path);
     let ass_dir = ass_p
         .parent()
@@ -32,7 +45,10 @@ pub fn run(video_path: &str, ass_path: &str, output_path: &str, ffmpeg_path: &st
     };
 
     let (audio_codec, extra_args): (&str, &[&str]) = if output_format == "webm" {
-        ("libopus", &["-c:v", "libvpx-vp9", "-crf", "33", "-b:v", "0"])
+        (
+            "libopus",
+            &["-c:v", "libvpx-vp9", "-crf", "33", "-b:v", "0"],
+        )
     } else {
         ("aac", &[])
     };
@@ -41,17 +57,46 @@ pub fn run(video_path: &str, ass_path: &str, output_path: &str, ffmpeg_path: &st
     args.extend_from_slice(extra_args);
     args.extend_from_slice(&["-c:a", audio_codec, output_path]);
 
-    let output = Command::new(ffmpeg_path)
+    let mut child = Command::new(ffmpeg_path)
         .current_dir(ass_dir)
         .args(&args)
-        .output()
-        .with_context(|| format!(
-            "FFmpeg not found at '{}'. Put ffmpeg.exe in src-tauri/bin or add FFmpeg to PATH.",
-            ffmpeg_path
-        ))?;
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .with_context(|| {
+            format!(
+                "FFmpeg not found at '{}'. Put ffmpeg.exe in src-tauri/bin or add FFmpeg to PATH.",
+                ffmpeg_path
+            )
+        })?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
+    let stderr = child.stderr.take();
+    let stderr_reader = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        if let Some(mut stderr) = stderr {
+            let _ = std::io::Read::read_to_end(&mut stderr, &mut buf);
+        }
+        buf
+    });
+
+    let status = loop {
+        if cancel.load(Ordering::Relaxed) {
+            let _ = child.kill();
+            let _ = child.wait();
+            let _ = stderr_reader.join();
+            let _ = std::fs::remove_file(output_path);
+            anyhow::bail!("Generation cancelled");
+        }
+        if let Some(status) = child.try_wait()? {
+            break status;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    };
+
+    let stderr_bytes = stderr_reader.join().unwrap_or_default();
+
+    if !status.success() {
+        let stderr = String::from_utf8_lossy(&stderr_bytes);
         let relevant: Vec<&str> = stderr
             .lines()
             .filter(|l| {
@@ -65,7 +110,14 @@ pub fn run(video_path: &str, ass_path: &str, output_path: &str, ffmpeg_path: &st
         let msg = if relevant.is_empty() {
             stderr.lines().last().unwrap_or("unknown error").to_string()
         } else {
-            relevant.iter().rev().take(5).rev().cloned().collect::<Vec<_>>().join("\n")
+            relevant
+                .iter()
+                .rev()
+                .take(5)
+                .rev()
+                .cloned()
+                .collect::<Vec<_>>()
+                .join("\n")
         };
         anyhow::bail!("FFmpeg render failed:\n{}", msg);
     }

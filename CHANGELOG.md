@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Added UTF-8 editor configuration to prevent Japanese text from opening as mojibake in local tools.
+- Fixed normal Whisper transcription failing after the cancel feature was added by replacing the unsafe callback wrapper with callback state that remains valid for the full inference call.
+
+### Added
+- Added a confirmed cancel flow for subtitle generation so users can stop long-running transcription or rendering without closing the app.
+- Added a privacy-conscious support log for subtitle generation errors and Rust panics under the app data folder.
+
+### Changed
+- Split panel resizer logic into `src/panel-resizer.js` and video/thumbnail/output-folder logic into `src/video-ui.js`; reduced `src/main.js` from 517 to 380 lines.
+- Eliminated redundant `getSettings()` calls in preview rendering hot path; settings object is now fetched once per frame and passed to all drawing functions.
+- Extracted `emit_build_left_line` and `emit_build_line` from `subtitle.rs::generate`; added unit tests for `format_ass_time`, `with_alpha`, `split_into_lines`, and `words_to_karaoke` (11 tests pass).
+- Updated the application icon from `lumimiicon.png`.
+- Changed package publisher/author metadata from the old personal identifier to `stk108`.
+- Changed the Tauri application identifier from the old personal identifier to `app.lumimi.lumimi` before public distribution.
+- Added system requirements and disclaimer wording for release documentation and the BOOTH product page.
+
 <!-- 調査中: リリースビルドでの Whisper 推論が開発ビルド比 ~6倍遅い問題（dev=9.8s, release=57s）。
   - CMAKE_BUILD_TYPE=RelWithDebInfo env var → 効果なし（VS マルチコンフィグジェネレーターは CMAKE_BUILD_TYPE 無視）
   - vendor/whisper-rs-sys-0.15.0 で config.profile("RelWithDebInfo") パッチ → 効果なし（57秒のまま）

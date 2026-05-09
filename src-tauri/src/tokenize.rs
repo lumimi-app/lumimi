@@ -1,27 +1,59 @@
 use anyhow::Result;
 use lindera::{
-    dictionary::load_dictionary,
-    mode::Mode,
-    segmenter::Segmenter,
-    tokenizer::Tokenizer,
+    dictionary::load_dictionary, mode::Mode, segmenter::Segmenter, tokenizer::Tokenizer,
 };
 
 use crate::transcribe::{Segment, Token};
 
 const MERGE_SUFFIXES: &[&str] = &[
     // Particles
-    "が", "を", "に", "へ", "と", "で", "の", "は", "も", "か", "や",
-    "から", "まで", "より", "ね", "よ", "な", "わ",
+    "が",
+    "を",
+    "に",
+    "へ",
+    "と",
+    "で",
+    "の",
+    "は",
+    "も",
+    "か",
+    "や",
+    "から",
+    "まで",
+    "より",
+    "ね",
+    "よ",
+    "な",
+    "わ",
     // Auxiliary verb endings
-    "て", "い", "る", "た", "だ",
-    "です", "ます", "ません", "ました", "でした", "ない", "でき",
+    "て",
+    "い",
+    "る",
+    "た",
+    "だ",
+    "です",
+    "ます",
+    "ません",
+    "ました",
+    "でした",
+    "ない",
+    "でき",
     // Contracted ている／ていた forms (Lindera may emit these as single morphemes)
-    "てる", "てた", "てて", "でる", "でた",
+    "てる",
+    "てた",
+    "てて",
+    "でる",
+    "でた",
     // Passive / potential auxiliary (れる・られる and conjugated forms)
-    "れ", "れる", "れた",
-    "られ", "られる", "られた",
+    "れ",
+    "れる",
+    "れた",
+    "られ",
+    "られる",
+    "られた",
     // Polite request
-    "ください", "下さい",
+    "ください",
+    "下さい",
 ];
 
 /// Returns true if every character in `s` is punctuation or a symbol.
@@ -119,10 +151,7 @@ pub fn merge_segment(seg: &Segment) -> Result<Vec<Word>> {
             continue;
         }
 
-        let start = char_times
-            .get(char_idx)
-            .map(|c| c.1)
-            .unwrap_or(seg.start);
+        let start = char_times.get(char_idx).map(|c| c.1).unwrap_or(seg.start);
         let end = char_times
             .get((char_idx + n).saturating_sub(1))
             .map(|c| c.2)

@@ -8,29 +8,53 @@ mod tokenize;
 mod transcribe;
 
 use settings::Settings;
+use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 use tauri::{Emitter, Manager};
+
+struct AppState {
+    cancel_generation: Arc<AtomicBool>,
+}
 
 #[tauri::command]
 async fn generate_subtitles(
     app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
     video_path: String,
     settings: Settings,
     output_dir: Option<String>,
     output_filename: Option<String>,
 ) -> Result<String, String> {
+    let cancel = Arc::clone(&state.cancel_generation);
+    cancel.store(false, Ordering::Relaxed);
     tauri::async_runtime::spawn_blocking(move || {
-        run_pipeline(
+        let result = run_pipeline(
             &app,
             &video_path,
             &settings,
             output_dir.as_deref(),
             output_filename.as_deref(),
-        )
+            cancel,
+        );
+        if let Err(err) = &result {
+            if err.to_string() != "Generation cancelled" {
+                append_support_log(&app, "generate_subtitles", &err.to_string());
+            }
+        }
+        result
     })
     .await
     .map_err(|e| e.to_string())?
     .map_err(|e: anyhow::Error| e.to_string())
+}
+
+#[tauri::command]
+fn cancel_generation(state: tauri::State<'_, AppState>) {
+    state.cancel_generation.store(true, Ordering::Relaxed);
 }
 
 fn emit(app: &tauri::AppHandle, step: &str, progress: f64) {
@@ -40,13 +64,77 @@ fn emit(app: &tauri::AppHandle, step: &str, progress: f64) {
     );
 }
 
+fn support_log_path(app: &tauri::AppHandle) -> PathBuf {
+    app.path()
+        .app_data_dir()
+        .unwrap_or_else(|_| PathBuf::from(env!("CARGO_MANIFEST_DIR")))
+        .join("lumimi-support.log")
+}
+
+fn sanitize_support_log_message(message: &str) -> String {
+    let mut sanitized = message.replace("\r\n", "\n");
+
+    for var_name in ["USERPROFILE", "HOME"] {
+        if let Some(home) = std::env::var_os(var_name) {
+            let home = PathBuf::from(home).to_string_lossy().to_string();
+            if !home.is_empty() {
+                sanitized = sanitized.replace(&home, "%USERPROFILE%");
+                sanitized = sanitized.replace(&home.replace('\\', "/"), "%USERPROFILE%");
+            }
+        }
+    }
+
+    if let Ok(current_dir) = std::env::current_dir() {
+        let current_dir = current_dir.to_string_lossy().to_string();
+        if !current_dir.is_empty() {
+            sanitized = sanitized.replace(&current_dir, "<app-dir>");
+            sanitized = sanitized.replace(&current_dir.replace('\\', "/"), "<app-dir>");
+        }
+    }
+
+    const MAX_LOG_MESSAGE_LEN: usize = 8_000;
+    if sanitized.len() > MAX_LOG_MESSAGE_LEN {
+        sanitized.truncate(MAX_LOG_MESSAGE_LEN);
+        sanitized.push_str("\n... truncated ...");
+    }
+
+    sanitized
+}
+
+fn append_support_log(app: &tauri::AppHandle, kind: &str, message: &str) {
+    let path = support_log_path(app);
+    if let Some(parent) = path.parent() {
+        if std::fs::create_dir_all(parent).is_err() {
+            return;
+        }
+    }
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or_default();
+    let sanitized = sanitize_support_log_message(message);
+
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+    {
+        let _ = writeln!(file, "[{}] {}", timestamp, kind);
+        let _ = writeln!(file, "{}", sanitized);
+        let _ = writeln!(file);
+    }
+}
+
 fn run_pipeline(
     app: &tauri::AppHandle,
     video_path: &str,
     settings: &Settings,
     output_dir: Option<&str>,
     output_filename: Option<&str>,
+    cancel: Arc<AtomicBool>,
 ) -> anyhow::Result<String> {
+    check_cancelled(&cancel)?;
     let vp = Path::new(video_path);
     let stem = vp
         .file_stem()
@@ -82,18 +170,36 @@ fn run_pipeline(
     eprintln!("[DIAG] ffmpeg_path={}", ffmpeg_path);
 
     emit(app, "audio", 0.10);
-    let samples = audio::extract_samples(video_path, &ffmpeg_path)?;
-    eprintln!("[DIAG] samples.len()={} ({:.1}s audio)", samples.len(), samples.len() as f64 / 16000.0);
+    let samples = audio::extract_samples(video_path, &ffmpeg_path, Arc::clone(&cancel))?;
+    check_cancelled(&cancel)?;
+    eprintln!(
+        "[DIAG] samples.len()={} ({:.1}s audio)",
+        samples.len(),
+        samples.len() as f64 / 16000.0
+    );
 
     emit(app, "transcribe", 0.30);
     let (raw_segments, detected_lang, translation_segments) = if settings.bilingual {
-        let (orig, lang, trans) = transcribe::run_bilingual(&samples, &model_path, &settings.initial_prompt, &settings.language)?;
+        let (orig, lang, trans) = transcribe::run_bilingual(
+            &samples,
+            &model_path,
+            &settings.initial_prompt,
+            &settings.language,
+            Arc::clone(&cancel),
+        )?;
         emit(app, "translate", 0.55);
         (orig, lang, Some(trans))
     } else {
-        let (orig, lang) = transcribe::run(&samples, &model_path, &settings.initial_prompt, &settings.language)?;
+        let (orig, lang) = transcribe::run(
+            &samples,
+            &model_path,
+            &settings.initial_prompt,
+            &settings.language,
+            Arc::clone(&cancel),
+        )?;
         (orig, lang, None)
     };
+    check_cancelled(&cancel)?;
 
     // Apply user-defined dictionary substitutions before tokenization.
     let dict_entries = load_dict_entries(app);
@@ -118,6 +224,7 @@ fn run_pipeline(
     // Export subtitle files (SRT/VTT/TXT) from segment-level Whisper output.
     if require_subtitle {
         for fmt in &settings.subtitle_formats {
+            check_cancelled(&cancel)?;
             let sub_path = out_dir.join(format!("{}.{}", out_name, fmt));
             match fmt.as_str() {
                 "srt" => export::write_srt(&raw_segments, &sub_path.to_string_lossy())?,
@@ -134,6 +241,7 @@ fn run_pipeline(
     }
 
     emit(app, "subtitle", 0.75);
+    check_cancelled(&cancel)?;
     let use_lindera = detected_lang == "ja";
     let segments: Vec<_> = raw_segments
         .iter()
@@ -174,9 +282,15 @@ fn run_pipeline(
         .collect();
 
     let subtitle_settings = adjusted_subtitle_settings(settings, video_info.as_ref());
-    subtitle::generate(&segments, &ass_path.to_string_lossy(), &subtitle_settings, translation_segments.as_deref())?;
+    subtitle::generate(
+        &segments,
+        &ass_path.to_string_lossy(),
+        &subtitle_settings,
+        translation_segments.as_deref(),
+    )?;
 
     emit(app, "render", 0.90);
+    check_cancelled(&cancel)?;
     render::run(
         video_path,
         &ass_path.to_string_lossy(),
@@ -184,10 +298,18 @@ fn run_pipeline(
         &ffmpeg_path,
         fonts_dir.as_deref(),
         &settings.output_format,
+        Arc::clone(&cancel),
     )?;
 
     emit(app, "done", 1.00);
     Ok(output_path.to_string_lossy().to_string())
+}
+
+fn check_cancelled(cancel: &AtomicBool) -> anyhow::Result<()> {
+    if cancel.load(Ordering::Relaxed) {
+        anyhow::bail!("Generation cancelled");
+    }
+    Ok(())
 }
 
 #[derive(Debug)]
@@ -542,8 +664,16 @@ fn to_base64(bytes: &[u8]) -> String {
         let n = (b0 << 16) | (b1 << 8) | b2;
         out.push(TABLE[((n >> 18) & 0x3f) as usize] as char);
         out.push(TABLE[((n >> 12) & 0x3f) as usize] as char);
-        out.push(if chunk.len() > 1 { TABLE[((n >> 6) & 0x3f) as usize] as char } else { '=' });
-        out.push(if chunk.len() > 2 { TABLE[(n & 0x3f) as usize] as char } else { '=' });
+        out.push(if chunk.len() > 1 {
+            TABLE[((n >> 6) & 0x3f) as usize] as char
+        } else {
+            '='
+        });
+        out.push(if chunk.len() > 2 {
+            TABLE[(n & 0x3f) as usize] as char
+        } else {
+            '='
+        });
     }
     out
 }
@@ -555,7 +685,20 @@ async fn extract_thumbnail(app: tauri::AppHandle, video_path: String) -> Result<
     let out_str = out_path.to_string_lossy().to_string();
     tauri::async_runtime::spawn_blocking(move || {
         std::process::Command::new(&ffmpeg_path)
-            .args(["-ss", "1", "-i", &video_path, "-vframes", "1", "-vf", "scale=640:-2", "-q:v", "5", "-y", &out_str])
+            .args([
+                "-ss",
+                "1",
+                "-i",
+                &video_path,
+                "-vframes",
+                "1",
+                "-vf",
+                "scale=640:-2",
+                "-q:v",
+                "5",
+                "-y",
+                &out_str,
+            ])
             .stderr(std::process::Stdio::null())
             .output()
             .map_err(|e| e.to_string())?;
@@ -570,10 +713,21 @@ async fn extract_thumbnail(app: tauri::AppHandle, video_path: String) -> Result<
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(AppState {
+            cancel_generation: Arc::new(AtomicBool::new(false)),
+        })
+        .setup(|app| {
+            let app_handle = app.handle().clone();
+            std::panic::set_hook(Box::new(move |panic_info| {
+                append_support_log(&app_handle, "panic", &panic_info.to_string());
+            }));
+            Ok(())
+        })
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             generate_subtitles,
+            cancel_generation,
             open_folder,
             list_fonts,
             list_models,
@@ -653,5 +807,16 @@ Stream #0:0: Video: h264, yuv420p, 1920x1080, 30 fps
         };
         let adjusted = adjusted_subtitle_settings(&settings, Some(&info));
         assert_eq!(adjusted.margin_v, 30);
+    }
+
+    #[test]
+    fn support_log_sanitizes_current_directory() {
+        let current_dir = std::env::current_dir().unwrap().to_string_lossy().to_string();
+        let message = format!("failed near {}\r\nsecond line", current_dir);
+        let sanitized = sanitize_support_log_message(&message);
+
+        assert!(!sanitized.contains(&current_dir));
+        assert!(sanitized.contains("<app-dir>") || sanitized.contains("%USERPROFILE%"));
+        assert!(!sanitized.contains("\r\n"));
     }
 }

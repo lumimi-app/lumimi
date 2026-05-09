@@ -2,7 +2,7 @@
 name = "lumimi"
 version = "1.0.0"
 description = "A Tauri App"
-authors = ["yusak"]
+authors = ["stk108"]
 license = "GPL-3.0-only"
 repository = "https://github.com/lumimi-app/lumimi"
 homepage = "https://github.com/lumimi-app/lumimi"
