@@ -61,7 +61,9 @@ const inputs = {
   fontName: document.getElementById("font-name"),
   fontSize: document.getElementById("font-size"),
   highlightColor: document.getElementById("highlight-color"),
+  highlightColorCode: document.getElementById("highlight-color-code"),
   textColor: document.getElementById("text-color"),
+  textColorCode: document.getElementById("text-color-code"),
   preShow: document.getElementById("pre-show"),
   initialPrompt: document.getElementById("initial-prompt"),
   maxCharsPerLine: document.getElementById("max-chars-per-line"),
@@ -166,6 +168,7 @@ async function init() {
   setupPresets({
     inputs,
     getCurrentLang: () => currentLang,
+    getSettings,
     saveSettings,
     updateColorPreview,
     updatePositionControls,
@@ -193,6 +196,10 @@ function applyLanguage(lang) {
   document.querySelectorAll("[data-i18n]").forEach((el) => {
     const key = el.dataset.i18n;
     if (s[key] !== undefined) el.textContent = s[key];
+  });
+  document.querySelectorAll("[data-i18n-placeholder]").forEach((el) => {
+    const key = el.dataset.i18nPlaceholder;
+    if (s[key] !== undefined) el.placeholder = s[key];
   });
 
   document.getElementById("initial-prompt").placeholder = s.promptPlaceholder;

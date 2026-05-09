@@ -48,6 +48,69 @@
         </div>
       </div>
     </div>
+    <div class="modal-overlay" id="preset-manage-overlay" style="display:none">
+      <div class="modal-box preset-manage-box">
+        <div class="modal-title" data-i18n="presetManageTitle">プリセット管理</div>
+        <div class="preset-manager">
+          <div class="preset-manager-menu" id="preset-manager-menu">
+            <button type="button" class="btn-secondary" id="btn-preset-mode-add" data-i18n="presetAdd">新規追加</button>
+            <button type="button" class="btn-secondary" id="btn-preset-mode-edit" data-i18n="presetEdit">編集</button>
+            <button type="button" class="btn-danger" id="btn-preset-mode-delete" data-i18n="presetDelete">削除</button>
+            <button type="button" class="btn-secondary" id="btn-preset-mode-restore" data-i18n="presetRestoreDefaults">デフォルトプリセットの復元</button>
+          </div>
+
+          <div class="preset-manager-pane" id="preset-pane-add" style="display:none">
+            <label class="preset-manager-field">
+              <span data-i18n="presetNameLabel">プリセット名</span>
+              <input type="text" id="preset-add-name" data-i18n-placeholder="presetNewPlaceholder" placeholder="新規プリセット" />
+            </label>
+            <div class="preset-editor-form" id="preset-add-form"></div>
+            <div class="preset-manager-actions">
+              <button type="button" class="btn-secondary" id="btn-preset-add" data-i18n="presetAddConfirm">追加</button>
+              <button type="button" class="btn-secondary" data-preset-close data-i18n="presetClose">閉じる</button>
+            </div>
+          </div>
+
+          <div class="preset-manager-pane" id="preset-pane-edit" style="display:none">
+            <label class="preset-manager-field">
+              <span data-i18n="presetSelectLabel">編集するプリセット</span>
+              <select id="preset-edit-select"></select>
+            </label>
+            <label class="preset-manager-field">
+              <span data-i18n="presetNameLabel">プリセット名</span>
+              <input type="text" id="preset-edit-name" />
+            </label>
+            <div class="preset-editor-form" id="preset-edit-form"></div>
+            <div class="preset-manager-actions">
+              <button type="button" class="btn-secondary" id="btn-preset-update" data-i18n="presetChangeConfirm">変更</button>
+              <button type="button" class="btn-secondary" data-preset-close data-i18n="presetClose">閉じる</button>
+            </div>
+          </div>
+
+          <div class="preset-manager-pane" id="preset-pane-delete" style="display:none">
+            <label class="preset-manager-field">
+              <span data-i18n="presetSelectDeleteLabel">削除するプリセット</span>
+              <select id="preset-delete-select"></select>
+            </label>
+            <div class="preset-manager-actions">
+              <button type="button" class="btn-danger" id="btn-preset-delete" data-i18n="presetDelete">削除</button>
+              <button type="button" class="btn-secondary" data-preset-close data-i18n="presetClose">閉じる</button>
+            </div>
+          </div>
+
+          <div class="preset-manager-pane" id="preset-pane-restore" style="display:none">
+            <label class="preset-manager-field">
+              <span data-i18n="presetSelectRestoreLabel">復元するプリセット</span>
+              <select id="preset-restore-select"></select>
+            </label>
+            <div class="preset-manager-actions">
+              <button type="button" class="btn-secondary" id="btn-preset-restore" data-i18n="presetRestoreConfirm">復元</button>
+              <button type="button" class="btn-secondary" data-preset-close data-i18n="presetClose">閉じる</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <main class="app">
       <header class="header">
@@ -122,6 +185,9 @@
               <div class="setting-group">
                 <div class="group-title" data-i18n="groupPreset">プリセット</div>
                 <div class="preset-buttons" id="preset-buttons"></div>
+                <button type="button" class="btn-folder-select preset-manage-btn" id="btn-preset-manage" data-i18n="presetManage">
+                  プリセット管理
+                </button>
               </div>
 
               <div class="setting-group">
@@ -315,16 +381,16 @@
                 <div class="setting-row">
                   <span class="setting-label" data-i18n="labelHighlight">ハイライト色</span>
                   <div class="color-row">
-                    <div class="color-preview" id="highlight-preview"></div>
-                    <input type="text" id="highlight-color" maxlength="12" />
+                    <input type="color" id="highlight-color" />
+                    <input type="text" id="highlight-color-code" class="color-code-input" maxlength="7" placeholder="#ffff00" />
                   </div>
                 </div>
 
                 <div class="setting-row">
                   <span class="setting-label" data-i18n="labelTextColor">文字色</span>
                   <div class="color-row">
-                    <div class="color-preview" id="text-preview"></div>
-                    <input type="text" id="text-color" maxlength="12" />
+                    <input type="color" id="text-color" />
+                    <input type="text" id="text-color-code" class="color-code-input" maxlength="7" placeholder="#ffffff" />
                   </div>
                 </div>
 

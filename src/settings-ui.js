@@ -28,8 +28,10 @@ export function loadSettings() {
   }
 
   inputs.fontSize.value = s.fontSize;
-  inputs.highlightColor.value = s.highlightColor;
-  inputs.textColor.value = s.textColor;
+  inputs.highlightColor.value = assToCss(s.highlightColor ?? s.highlight_color);
+  inputs.highlightColorCode.value = inputs.highlightColor.value.toLowerCase();
+  inputs.textColor.value = assToCss(s.textColor ?? s.text_color);
+  inputs.textColorCode.value = inputs.textColor.value.toLowerCase();
   inputs.preShow.value = s.preShowS;
   inputs.holdS.value = s.holdS ?? 0.5;
   inputs.maxSimultaneousLines.value = String(s.maxSimultaneousLines ?? 2);
@@ -61,8 +63,8 @@ export function loadSettings() {
   inputs.fontBold.checked = raw !== 0;
   inputs.highlightStyle.value = s.highlightStyle ?? "color";
 
-  updateColorPreview("highlight-preview", s.highlightColor);
-  updateColorPreview("text-preview", s.textColor);
+  updateColorPreview(inputs.highlightColor, inputs.highlightColor.value);
+  updateColorPreview(inputs.textColor, inputs.textColor.value);
 }
 
 export function saveSettings() {
@@ -90,8 +92,8 @@ export function getSettings() {
     model_path: modelSelect.value || "models/ggml-medium.bin",
     font_name: inputs.fontName.value,
     font_size: parseInt(inputs.fontSize.value, 10),
-    highlight_color: inputs.highlightColor.value,
-    text_color: inputs.textColor.value,
+    highlight_color: cssToAss(inputs.highlightColor.value),
+    text_color: cssToAss(inputs.textColor.value),
     pre_show_s: parseFloat(inputs.preShow.value),
     hold_s: parseFloat(inputs.holdS.value) || 0,
     max_simultaneous_lines: parseInt(inputs.maxSimultaneousLines.value, 10) || 1,
@@ -121,7 +123,9 @@ export function getSettings() {
 }
 
 export function assToCss(assColor) {
-  const hex = String(assColor || "")
+  const value = String(assColor || "").trim();
+  if (/^#[0-9a-fA-F]{6}$/.test(value)) return value;
+  const hex = value
     .replace(/^&H/i, "")
     .replace(/&$/, "");
   if (hex.length >= 8) {
@@ -133,9 +137,33 @@ export function assToCss(assColor) {
   return "#ffffff";
 }
 
-export function updateColorPreview(id, assColor) {
-  const el = document.getElementById(id);
-  if (el) el.style.background = assToCss(assColor);
+export function cssToAss(cssColor) {
+  const hex = String(cssColor || "")
+    .trim()
+    .replace(/^#/, "");
+  if (!/^[0-9a-fA-F]{6}$/.test(hex)) return "&H00FFFFFF&";
+  const rr = hex.slice(0, 2);
+  const gg = hex.slice(2, 4);
+  const bb = hex.slice(4, 6);
+  return `&H00${bb}${gg}${rr}&`.toUpperCase();
+}
+
+export function normalizeCssColor(color) {
+  const value = String(color || "").trim();
+  if (/^#[0-9a-fA-F]{6}$/.test(value)) return value.toLowerCase();
+  return assToCss(value);
+}
+
+export function updateColorPreview(target, color) {
+  const el = typeof target === "string" ? document.getElementById(target) : target;
+  const cssColor = normalizeCssColor(color);
+  if (!el) return cssColor;
+  if (el.matches?.('input[type="color"]')) {
+    el.value = cssColor;
+  } else {
+    el.style.background = cssColor;
+  }
+  return cssColor;
 }
 
 export function updateOutputTypeVisibility() {
@@ -159,13 +187,50 @@ export function updatePositionControls() {
 
 export function setupColorPreviews() {
   const { inputs } = deps;
-  inputs.highlightColor.addEventListener("input", () => {
-    updateColorPreview("highlight-preview", inputs.highlightColor.value);
+
+  const syncPickerToCode = (picker, codeInput) => {
+    const cssColor = updateColorPreview(picker, picker.value);
+    codeInput.value = cssColor;
     saveSettings();
+  };
+
+  const syncCodeToPicker = (picker, codeInput) => {
+    const cssColor = normalizeCssColor(codeInput.value);
+    if (!/^#[0-9a-fA-F]{6}$/.test(codeInput.value.trim())) {
+      codeInput.value = cssColor;
+    }
+    updateColorPreview(picker, cssColor);
+    codeInput.classList.remove("is-invalid");
+    saveSettings();
+  };
+
+  const markCodeValidity = (codeInput) => {
+    const valid = /^#[0-9a-fA-F]{6}$/.test(codeInput.value.trim());
+    codeInput.classList.toggle("is-invalid", !valid);
+    return valid;
+  };
+
+  inputs.highlightColor.addEventListener("input", () => {
+    syncPickerToCode(inputs.highlightColor, inputs.highlightColorCode);
   });
   inputs.textColor.addEventListener("input", () => {
-    updateColorPreview("text-preview", inputs.textColor.value);
-    saveSettings();
+    syncPickerToCode(inputs.textColor, inputs.textColorCode);
+  });
+  inputs.highlightColorCode.addEventListener("input", () => {
+    if (markCodeValidity(inputs.highlightColorCode)) {
+      syncCodeToPicker(inputs.highlightColor, inputs.highlightColorCode);
+    }
+  });
+  inputs.textColorCode.addEventListener("input", () => {
+    if (markCodeValidity(inputs.textColorCode)) {
+      syncCodeToPicker(inputs.textColor, inputs.textColorCode);
+    }
+  });
+  inputs.highlightColorCode.addEventListener("change", () => {
+    syncCodeToPicker(inputs.highlightColor, inputs.highlightColorCode);
+  });
+  inputs.textColorCode.addEventListener("change", () => {
+    syncCodeToPicker(inputs.textColor, inputs.textColorCode);
   });
   [inputs.positionMode, inputs.subtitleX, inputs.subtitleY].forEach((el) => {
     el.addEventListener("input", () => {
