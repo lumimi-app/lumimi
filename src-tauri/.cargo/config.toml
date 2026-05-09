@@ -1,0 +1,5 @@
+[env]
+LIBCLANG_PATH = "C:\\Program Files\\LLVM\\bin"
+# Keep whisper.cpp optimized when whisper-rs-sys builds with MSVC Release.
+CMAKE_C_FLAGS_RELEASE = { value = "/MD /O2 /Ob2 /DNDEBUG", force = true }
+CMAKE_CXX_FLAGS_RELEASE = { value = "/MD /O2 /Ob2 /DNDEBUG", force = true }
