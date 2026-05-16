@@ -28,6 +28,7 @@ async fn generate_subtitles(
     settings: Settings,
     output_dir: Option<String>,
     output_filename: Option<String>,
+    output_conflict_action: Option<String>,
 ) -> Result<String, String> {
     let cancel = Arc::clone(&state.cancel_generation);
     cancel.store(false, Ordering::Relaxed);
@@ -38,6 +39,7 @@ async fn generate_subtitles(
             &settings,
             output_dir.as_deref(),
             output_filename.as_deref(),
+            output_conflict_action.as_deref().unwrap_or("overwrite"),
             cancel,
         );
         if let Err(err) = &result {
@@ -132,6 +134,7 @@ fn run_pipeline(
     settings: &Settings,
     output_dir: Option<&str>,
     output_filename: Option<&str>,
+    output_conflict_action: &str,
     cancel: Arc<AtomicBool>,
 ) -> anyhow::Result<String> {
     check_cancelled(&cancel)?;
@@ -151,15 +154,13 @@ fn run_pipeline(
     std::fs::create_dir_all(&out_dir)?;
 
     let ass_path = temp_dir.join(format!("{}.ass", stem));
-    let default_name = format!("{}_subtitled", stem);
-    let out_name = output_filename.unwrap_or(&default_name);
-    let ext = match settings.output_format.as_str() {
-        "mkv" => "mkv",
-        "mov" => "mov",
-        "webm" => "webm",
-        _ => "mp4",
+    let output_plan = build_output_plan(video_path, settings, output_dir, output_filename);
+    let output_plan = if output_conflict_action == "rename" {
+        output_plan.with_available_suffix()
+    } else {
+        output_plan
     };
-    let output_path = out_dir.join(format!("{}.{}", out_name, ext));
+    let output_path = output_plan.video_path.clone();
 
     let model_path = resolve_resource_path(app, &settings.model_path);
     let ffmpeg_path = resolve_resource_path(app, "bin/ffmpeg.exe");
@@ -224,9 +225,8 @@ fn run_pipeline(
     // Export subtitle files (SRT/VTT/TXT) from segment-level Whisper output.
     // When bilingual mode is enabled, include the translated English line as well.
     if require_subtitle {
-        for fmt in &settings.subtitle_formats {
+        for (fmt, sub_path) in &output_plan.subtitle_paths {
             check_cancelled(&cancel)?;
-            let sub_path = out_dir.join(format!("{}.{}", out_name, fmt));
             match fmt.as_str() {
                 "srt" => export::write_srt_with_translation(
                     &raw_segments,
@@ -250,7 +250,7 @@ fn run_pipeline(
 
     if !require_video {
         emit(app, "done", 1.00);
-        return Ok(out_dir.to_string_lossy().to_string());
+        return Ok(output_plan.out_dir.to_string_lossy().to_string());
     }
 
     emit(app, "subtitle", 0.75);
@@ -304,6 +304,8 @@ fn run_pipeline(
 
     emit(app, "render", 0.90);
     check_cancelled(&cancel)?;
+    let output_path =
+        output_path.ok_or_else(|| anyhow::anyhow!("Video output path was not prepared"))?;
     render::run(
         video_path,
         &ass_path.to_string_lossy(),
@@ -316,6 +318,163 @@ fn run_pipeline(
 
     emit(app, "done", 1.00);
     Ok(output_path.to_string_lossy().to_string())
+}
+
+#[derive(Debug, Clone)]
+struct OutputPlan {
+    out_dir: PathBuf,
+    base_name: String,
+    video_ext: Option<String>,
+    video_path: Option<PathBuf>,
+    subtitle_formats: Vec<String>,
+    subtitle_paths: Vec<(String, PathBuf)>,
+}
+
+impl OutputPlan {
+    fn conflicting_paths(&self) -> Vec<PathBuf> {
+        let mut paths = Vec::new();
+        if let Some(path) = &self.video_path {
+            if path.exists() {
+                paths.push(path.clone());
+            }
+        }
+        for (_, path) in &self.subtitle_paths {
+            if path.exists() {
+                paths.push(path.clone());
+            }
+        }
+        paths
+    }
+
+    fn with_available_suffix(&self) -> Self {
+        if self.conflicting_paths().is_empty() {
+            return self.clone();
+        }
+
+        for suffix in 2..10_000 {
+            let candidate = self.with_base_name(format!("{}_{}", self.base_name, suffix));
+            if candidate.conflicting_paths().is_empty() {
+                return candidate;
+            }
+        }
+
+        self.with_base_name(format!(
+            "{}_{}",
+            self.base_name,
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|duration| duration.as_secs())
+                .unwrap_or_default()
+        ))
+    }
+
+    fn with_base_name(&self, base_name: String) -> Self {
+        let video_path = self
+            .video_ext
+            .as_ref()
+            .map(|ext| self.out_dir.join(format!("{}.{}", base_name, ext)));
+        let subtitle_paths = self
+            .subtitle_formats
+            .iter()
+            .map(|fmt| {
+                (
+                    fmt.clone(),
+                    self.out_dir.join(format!("{}.{}", base_name, fmt)),
+                )
+            })
+            .collect();
+
+        Self {
+            out_dir: self.out_dir.clone(),
+            base_name,
+            video_ext: self.video_ext.clone(),
+            video_path,
+            subtitle_formats: self.subtitle_formats.clone(),
+            subtitle_paths,
+        }
+    }
+}
+
+fn build_output_plan(
+    video_path: &str,
+    settings: &Settings,
+    output_dir: Option<&str>,
+    output_filename: Option<&str>,
+) -> OutputPlan {
+    let vp = Path::new(video_path);
+    let stem = vp
+        .file_stem()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string();
+    let video_dir = vp.parent().unwrap_or(Path::new("."));
+    let out_dir = output_dir
+        .map(PathBuf::from)
+        .unwrap_or_else(|| video_dir.join("output"));
+    let default_name = format!("{}_subtitled", stem);
+    let base_name = output_filename.unwrap_or(&default_name).to_string();
+    let require_video = settings.output_type == "video" || settings.output_type == "both";
+    let require_subtitle = settings.output_type == "subtitle" || settings.output_type == "both";
+    let video_ext = if require_video {
+        Some(
+            match settings.output_format.as_str() {
+                "mkv" => "mkv",
+                "mov" => "mov",
+                "webm" => "webm",
+                _ => "mp4",
+            }
+            .to_string(),
+        )
+    } else {
+        None
+    };
+    let subtitle_formats = if require_subtitle {
+        settings.subtitle_formats.clone()
+    } else {
+        Vec::new()
+    };
+
+    OutputPlan {
+        out_dir,
+        base_name,
+        video_ext,
+        video_path: None,
+        subtitle_formats,
+        subtitle_paths: Vec::new(),
+    }
+    .with_base_name(output_filename.unwrap_or(&default_name).to_string())
+}
+
+#[derive(serde::Serialize)]
+struct OutputConflict {
+    path: String,
+    name: String,
+}
+
+#[tauri::command]
+fn preview_output_conflicts(
+    video_path: String,
+    settings: Settings,
+    output_dir: Option<String>,
+    output_filename: Option<String>,
+) -> Vec<OutputConflict> {
+    build_output_plan(
+        &video_path,
+        &settings,
+        output_dir.as_deref(),
+        output_filename.as_deref(),
+    )
+    .conflicting_paths()
+    .into_iter()
+    .map(|path| OutputConflict {
+        name: path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string(),
+        path: path.to_string_lossy().to_string(),
+    })
+    .collect()
 }
 
 fn check_cancelled(cancel: &AtomicBool) -> anyhow::Result<()> {
@@ -741,6 +900,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             generate_subtitles,
             cancel_generation,
+            preview_output_conflicts,
             open_folder,
             list_fonts,
             list_models,
@@ -834,5 +994,36 @@ Stream #0:0: Video: h264, yuv420p, 1920x1080, 30 fps
         assert!(!sanitized.contains(&current_dir));
         assert!(sanitized.contains("<app-dir>") || sanitized.contains("%USERPROFILE%"));
         assert!(!sanitized.contains("\r\n"));
+    }
+
+    #[test]
+    fn output_plan_renames_all_outputs_with_same_suffix() {
+        let temp_base =
+            std::env::temp_dir().join(format!("lumimi-output-plan-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&temp_base);
+        std::fs::create_dir_all(&temp_base).unwrap();
+        std::fs::write(temp_base.join("clip.mp4"), b"video").unwrap();
+        std::fs::write(temp_base.join("clip_2.mp4"), b"video").unwrap();
+
+        let video_path = temp_base.join("clip-source.mp4");
+        let mut settings = Settings::default();
+        settings.output_type = "both".to_string();
+        settings.output_format = "mp4".to_string();
+        settings.subtitle_formats = vec!["srt".to_string(), "vtt".to_string()];
+
+        let plan = build_output_plan(
+            &video_path.to_string_lossy(),
+            &settings,
+            Some(&temp_base.to_string_lossy()),
+            Some("clip"),
+        )
+        .with_available_suffix();
+
+        assert_eq!(plan.base_name, "clip_3");
+        assert_eq!(plan.video_path.unwrap(), temp_base.join("clip_3.mp4"));
+        assert_eq!(plan.subtitle_paths[0].1, temp_base.join("clip_3.srt"));
+        assert_eq!(plan.subtitle_paths[1].1, temp_base.join("clip_3.vtt"));
+
+        let _ = std::fs::remove_dir_all(temp_base);
     }
 }

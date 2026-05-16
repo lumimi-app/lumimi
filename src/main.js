@@ -43,6 +43,12 @@ const cancelConfirmTitle = document.getElementById("cancel-confirm-title");
 const cancelConfirmMessage = document.getElementById("cancel-confirm-message");
 const btnCancelYes = document.getElementById("btn-cancel-yes");
 const btnCancelNo = document.getElementById("btn-cancel-no");
+const outputConflictOverlay = document.getElementById("output-conflict-overlay");
+const outputConflictTitle = document.getElementById("output-conflict-title");
+const outputConflictMessage = document.getElementById("output-conflict-message");
+const btnOutputRename = document.getElementById("btn-output-rename");
+const btnOutputOverwrite = document.getElementById("btn-output-overwrite");
+const btnOutputCancel = document.getElementById("btn-output-cancel");
 
 const modelSelect = document.getElementById("model-select");
 const languageSelect = document.getElementById("language-select");
@@ -223,6 +229,7 @@ function applyLanguage(lang) {
   }
   updateGenerateButton();
   updateCancelConfirmText();
+  updateOutputConflictText();
 }
 
 function listenProgress() {
@@ -302,6 +309,14 @@ function updateCancelConfirmText() {
   if (btnCancelNo) btnCancelNo.textContent = s.cancelConfirmNo;
 }
 
+function updateOutputConflictText() {
+  const s = STRINGS[currentLang];
+  if (outputConflictTitle) outputConflictTitle.textContent = s.outputConflictTitle;
+  if (btnOutputRename) btnOutputRename.textContent = s.outputConflictRename;
+  if (btnOutputOverwrite) btnOutputOverwrite.textContent = s.outputConflictOverwrite;
+  if (btnOutputCancel) btnOutputCancel.textContent = s.outputConflictCancel;
+}
+
 function showCancelConfirm() {
   if (!isProcessing || cancelRequested || !cancelConfirmOverlay) return;
   updateCancelConfirmText();
@@ -310,6 +325,42 @@ function showCancelConfirm() {
 
 function hideCancelConfirm() {
   if (cancelConfirmOverlay) cancelConfirmOverlay.style.display = "none";
+}
+
+function showOutputConflict(conflicts) {
+  if (!outputConflictOverlay) return Promise.resolve("cancel");
+  const s = STRINGS[currentLang];
+  updateOutputConflictText();
+
+  const names = conflicts.map((conflict) => conflict.name || conflict.path).filter(Boolean);
+  const shown = names.slice(0, 4);
+  const more = Math.max(0, names.length - shown.length);
+  const moreText = more > 0
+    ? `\n${s.outputConflictMore.replace("{count}", String(more))}`
+    : "";
+  outputConflictMessage.textContent = `${s.outputConflictMessage}\n\n${shown.join("\n")}${moreText}`;
+  outputConflictOverlay.style.display = "flex";
+
+  return new Promise((resolve) => {
+    const finish = (value) => {
+      hideOutputConflict();
+      btnOutputRename?.removeEventListener("click", onRename);
+      btnOutputOverwrite?.removeEventListener("click", onOverwrite);
+      btnOutputCancel?.removeEventListener("click", onCancel);
+      resolve(value);
+    };
+    const onRename = () => finish("rename");
+    const onOverwrite = () => finish("overwrite");
+    const onCancel = () => finish("cancel");
+
+    btnOutputRename?.addEventListener("click", onRename);
+    btnOutputOverwrite?.addEventListener("click", onOverwrite);
+    btnOutputCancel?.addEventListener("click", onCancel);
+  });
+}
+
+function hideOutputConflict() {
+  if (outputConflictOverlay) outputConflictOverlay.style.display = "none";
 }
 
 async function requestCancelGeneration() {
@@ -341,6 +392,28 @@ function updatePreviewExpandButton() {
 async function generate() {
   if (!selectedVideoPath || isProcessing) return;
 
+  saveSettings();
+  const customName = outputFilenameInput.value.trim();
+  const settings = getSettings();
+  let outputConflictAction = "overwrite";
+
+  try {
+    const conflicts = await invoke("preview_output_conflicts", {
+      videoPath: selectedVideoPath,
+      settings,
+      outputDir: selectedOutputDir ?? null,
+      outputFilename: customName || null,
+    });
+    if (conflicts.length > 0) {
+      outputConflictAction = await showOutputConflict(conflicts);
+      if (outputConflictAction === "cancel") return;
+    }
+  } catch (err) {
+    statusEl.textContent = `${STRINGS[currentLang].errorPrefix}${err}`;
+    statusEl.className = "status error";
+    return;
+  }
+
   isProcessing = true;
   cancelRequested = false;
   updateGenerateButton();
@@ -349,16 +422,13 @@ async function generate() {
   statusEl.className = "status";
   progressFill.style.width = "0%";
   progressLabel.textContent = STRINGS[currentLang].stepStarting;
-
-  saveSettings();
-
   try {
-    const customName = outputFilenameInput.value.trim();
     const outputPath = await invoke("generate_subtitles", {
       videoPath: selectedVideoPath,
-      settings: getSettings(),
+      settings,
       outputDir: selectedOutputDir ?? null,
       outputFilename: customName || null,
+      outputConflictAction,
     });
 
     lastOutputPath = outputPath;
@@ -380,6 +450,7 @@ async function generate() {
     isProcessing = false;
     cancelRequested = false;
     hideCancelConfirm();
+    hideOutputConflict();
     updateGenerateButton();
   }
 }
