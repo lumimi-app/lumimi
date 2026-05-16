@@ -1,3 +1,6 @@
+export const APP_AUTHOR = "stk108";
+export const APP_COPYRIGHT = "Copyright (C) 2026 stk108";
+
 export const STRINGS = {
   ja: {
     dropLabel: "クリックまたはドラッグ&ドロップで動画を選択",

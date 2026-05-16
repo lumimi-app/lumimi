@@ -198,8 +198,7 @@ fn emit_build_line(
             format!("{{\\pos({},{})}}", manual_x, manual_y)
         } else if is_vertical {
             let col = line_count % max_lines;
-            let x =
-                (play_res_x as i32 - margin_h as i32 - col as i32 * col_step as i32).max(0);
+            let x = (play_res_x as i32 - margin_h as i32 - col as i32 * col_step as i32).max(0);
             format!("{{\\pos({},{})}}", x, vertical_anchor_y)
         } else {
             String::new()
@@ -614,7 +613,11 @@ mod tests {
     use crate::tokenize::Word;
 
     fn w(text: &str, start: f64, end: f64) -> Word {
-        Word { text: text.to_string(), start, end }
+        Word {
+            text: text.to_string(),
+            start,
+            end,
+        }
     }
 
     #[test]
@@ -655,7 +658,11 @@ mod tests {
     #[test]
     fn split_into_lines_breaks_at_max_chars() {
         // "Hello"=5, "World"=5, "Foo"=3 with max_chars=6
-        let words = vec![w("Hello", 0.0, 0.5), w("World", 0.5, 1.0), w("Foo", 1.0, 1.5)];
+        let words = vec![
+            w("Hello", 0.0, 0.5),
+            w("World", 0.5, 1.0),
+            w("Foo", 1.0, 1.5),
+        ];
         let lines = split_into_lines(&words, 6);
         assert_eq!(lines.len(), 3);
         assert_eq!(lines[0][0].text, "Hello");

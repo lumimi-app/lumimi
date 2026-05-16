@@ -824,7 +824,10 @@ Stream #0:0: Video: h264, yuv420p, 1920x1080, 30 fps
 
     #[test]
     fn support_log_sanitizes_current_directory() {
-        let current_dir = std::env::current_dir().unwrap().to_string_lossy().to_string();
+        let current_dir = std::env::current_dir()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
         let message = format!("failed near {}\r\nsecond line", current_dir);
         let sanitized = sanitize_support_log_message(&message);
 
