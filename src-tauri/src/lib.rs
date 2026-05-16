@@ -661,9 +661,9 @@ struct ModelInfo {
 
 const KNOWN_MODELS: &[(&str, &str, &str)] = &[
     (
-        "ggml-medium.bin",
+        "ggml-medium-q5_0.bin",
         "標準（高速）",
-        "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.bin",
+        "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium-q5_0.bin",
     ),
     (
         "ggml-large-v3-turbo.bin",

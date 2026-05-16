@@ -4,6 +4,7 @@ const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 
 const HIGH_ACCURACY_MODEL_PATH = "models/ggml-large-v3-turbo.bin";
+const DEFAULT_MODEL_PATH = "models/ggml-medium-q5_0.bin";
 
 export async function ensureDefaultModel() {
   const models = await invoke("list_models");
@@ -79,7 +80,7 @@ export async function loadModelList({ modelSelect, getCurrentLang, saveSettings 
   const highModelButton = document.getElementById("btn-download-high-model");
   const saved =
     JSON.parse(localStorage.getItem("settings") || "{}").model_path ??
-    "models/ggml-medium.bin";
+    DEFAULT_MODEL_PATH;
   try {
     const models = await invoke("list_models");
     const modelsByPath = new Map(models.map((m) => [m.path, m]));
@@ -106,7 +107,7 @@ export async function loadModelList({ modelSelect, getCurrentLang, saveSettings 
     let lastAvailableValue = modelSelect.value;
     if (!modelsByPath.get(lastAvailableValue)?.available) {
       const first = models.find((m) => m.available);
-      lastAvailableValue = first?.path || "models/ggml-medium.bin";
+      lastAvailableValue = first?.path || DEFAULT_MODEL_PATH;
       modelSelect.value = lastAvailableValue;
     }
 

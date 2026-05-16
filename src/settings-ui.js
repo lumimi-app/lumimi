@@ -89,7 +89,7 @@ export function getSettings() {
   const subtitleX = parseFloat(inputs.subtitleX.value);
   const subtitleY = parseFloat(inputs.subtitleY.value);
   return {
-    model_path: modelSelect.value || "models/ggml-medium.bin",
+    model_path: modelSelect.value || "models/ggml-medium-q5_0.bin",
     font_name: inputs.fontName.value,
     font_size: parseInt(inputs.fontSize.value, 10),
     highlight_color: cssToAss(inputs.highlightColor.value),

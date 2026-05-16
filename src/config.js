@@ -251,7 +251,7 @@ export const STRINGS = {
 };
 
 export const MODEL_LABELS = {
-  "models/ggml-medium.bin":         { ja: "標準（高速）",  en: "Standard (fast)" },
+  "models/ggml-medium-q5_0.bin":    { ja: "標準（高速）",  en: "Standard (fast)" },
   "models/ggml-large-v3-turbo.bin": { ja: "高精度（低速）", en: "High accuracy (slow)" },
 };
 

@@ -29,7 +29,7 @@
     "publisher": "stk108",
     "resources": [
       "bin/*",
-      "models/ggml-medium.bin",
+      "models/ggml-medium-q5_0.bin",
       "fonts/*",
       "licenses/*"
     ],

@@ -42,7 +42,7 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            model_path: "models/ggml-medium.bin".to_string(),
+            model_path: "models/ggml-medium-q5_0.bin".to_string(),
             font_name: "Montserrat".to_string(),
             font_size: 150,
             highlight_color: "&H0000FFFF&".to_string(),

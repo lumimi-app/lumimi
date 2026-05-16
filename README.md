@@ -71,7 +71,7 @@ npm run tauri dev
 ## 配布について
 
 - Windows 版は BOOTH で配布
-- 標準モデル `models/ggml-medium.bin` を同梱
+- 標準モデル `models/ggml-medium-q5_0.bin` を同梱
 - 高精度モデル `models/ggml-large-v3-turbo.bin` は任意ダウンロード方式
 - Windows 版には FFmpeg を同梱
 - サードパーティライセンス表記は `src-tauri/licenses/` に収録
@@ -214,7 +214,7 @@ For local development, place the following files when needed:
 ## Distribution Notes
 
 - Windows release distribution: BOOTH
-- Standard model `models/ggml-medium.bin` is bundled
+- Standard model `models/ggml-medium-q5_0.bin` is bundled
 - High accuracy model `models/ggml-large-v3-turbo.bin` is an optional download
 - FFmpeg is bundled with the Windows release
 - Third-party licenses and notices are included under `src-tauri/licenses/`
