@@ -122,7 +122,7 @@ Lumimi は字幕生成支援ツールです。
 
 字幕生成および動画処理は、基本的にユーザー PC 上でローカル実行されます。
 
-選択した動画、抽出音声、生成字幕、辞書登録内容、キーワード指定などは、デフォルトでは外部サーバーへ送信されません。
+Lumimiは、選択した動画、抽出音声、生成字幕、辞書登録内容、キーワード指定などを外部サーバーへ送信しません。
 
 言語設定、字幕スタイル、出力設定などのアプリ設定はローカル保存されます。
 
@@ -264,9 +264,9 @@ The developer is not responsible for any damage, lost work time, data loss, or t
 
 ## Privacy / Data Handling
 
-Subtitle generation and video processing run locally on the user’s PC by default.
+Subtitle generation and video processing run locally on the user’s PC.
 
-Selected videos, extracted audio, generated subtitles, custom dictionary entries, and keyword hints are not uploaded to external servers unless explicitly required by a feature.
+Lumimi does not upload selected videos, extracted audio, generated subtitles, custom dictionary entries, or keyword hints to external servers.
 
 Application settings such as language, subtitle style, and output preferences are stored locally.
 
