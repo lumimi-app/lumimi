@@ -9,7 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Fixed bundled font selections such as GenEi Kiwami Gothic not being reflected in rendered videos.
-- Fixed portrait videos clipping wide horizontal subtitles by wrapping lines to fit within 90% of the video width.
+- Fixed portrait videos clipping wide horizontal subtitles by wrapping lines to fit within 98% of the video width while avoiding unnatural Japanese line breaks.
+- Fixed overlapping subtitles when manual positioning is used with two or more simultaneous lines.
 
 ## [1.0.0] - 2026-05-16
 

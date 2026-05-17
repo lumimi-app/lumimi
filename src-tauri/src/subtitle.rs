@@ -96,9 +96,101 @@ fn ass_text_width_units(text: &str) -> u32 {
     text.chars().map(ass_char_width_units).sum()
 }
 
+fn is_japanese_kana(ch: char) -> bool {
+    ('\u{3040}'..='\u{309F}').contains(&ch) || ('\u{30A0}'..='\u{30FF}').contains(&ch)
+}
+
+fn starts_with_closing_punctuation(text: &str) -> bool {
+    text.chars().next().is_some_and(|ch| {
+        matches!(
+            ch,
+            '。' | '、'
+                | '，'
+                | '．'
+                | ','
+                | '.'
+                | '!'
+                | '?'
+                | '！'
+                | '？'
+                | ')'
+                | ']'
+                | '}'
+                | '）'
+                | '］'
+                | '｝'
+                | '」'
+                | '』'
+                | '】'
+                | '〉'
+                | '》'
+                | '…'
+                | 'ー'
+                | '〜'
+                | '～'
+        )
+    })
+}
+
+fn is_short_kana_tail(text: &str) -> bool {
+    let mut chars = text.chars();
+    let count = chars.clone().count();
+    count <= 3 && count > 0 && chars.all(is_japanese_kana)
+}
+
+fn should_keep_with_previous(text: &str) -> bool {
+    starts_with_closing_punctuation(text) || is_short_kana_tail(text)
+}
+
+fn is_polite_prefix(text: &str) -> bool {
+    matches!(text, "お" | "ご")
+}
+
+fn line_metrics(words: &[Word]) -> (usize, u32) {
+    words.iter().fold((0usize, 0u32), |(chars, units), word| {
+        (
+            chars + word.text.chars().count(),
+            units + ass_text_width_units(&word.text),
+        )
+    })
+}
+
+fn push_line_carrying_polite_prefix(
+    lines: &mut Vec<Vec<Word>>,
+    current: &mut Vec<Word>,
+    line_chars: &mut usize,
+    line_units: &mut u32,
+) {
+    let carry = current
+        .last()
+        .is_some_and(|word| is_polite_prefix(&word.text))
+        .then(|| current.pop())
+        .flatten();
+
+    if !current.is_empty() {
+        lines.push(std::mem::take(current));
+    }
+
+    if let Some(word) = carry {
+        current.push(word);
+    }
+    let (chars, units) = line_metrics(current);
+    *line_chars = chars;
+    *line_units = units;
+}
+
+fn within_relaxed_width(units: u32, max_units: u32) -> bool {
+    units as u64 <= max_units as u64 * 5 / 4
+}
+
+fn offset_coord(base: u32, step: u32, slot: usize, direction: i32, max: u32) -> u32 {
+    let offset = step as i32 * slot as i32 * direction;
+    (base as i32 + offset).clamp(0, max as i32) as u32
+}
+
 fn split_word_by_width(word: &Word, max_units: u32) -> Vec<Word> {
     let chars: Vec<char> = word.text.chars().collect();
-    if chars.len() <= 1 || ass_text_width_units(&word.text) <= max_units {
+    if chars.len() <= 1 || within_relaxed_width(ass_text_width_units(&word.text), max_units) {
         return vec![word.clone()];
     }
 
@@ -153,17 +245,20 @@ fn split_into_lines(words: &[Word], max_chars: usize, max_units: u32) -> Vec<Vec
     for w in words {
         let wlen = w.text.chars().count();
         let wunits = ass_text_width_units(&w.text);
-        if wunits > max_units {
+        if wunits > max_units && !within_relaxed_width(wunits, max_units) {
             for part in split_word_by_width(w, max_units) {
                 let plen = part.text.chars().count();
                 let punits = ass_text_width_units(&part.text);
                 if !current.is_empty()
                     && (line_chars + plen > max_chars || line_units + punits > max_units)
+                    && !should_keep_with_previous(&part.text)
                 {
-                    lines.push(current);
-                    current = Vec::new();
-                    line_chars = 0;
-                    line_units = 0;
+                    push_line_carrying_polite_prefix(
+                        &mut lines,
+                        &mut current,
+                        &mut line_chars,
+                        &mut line_units,
+                    );
                 }
                 current.push(part);
                 line_chars += plen;
@@ -172,12 +267,16 @@ fn split_into_lines(words: &[Word], max_chars: usize, max_units: u32) -> Vec<Vec
             continue;
         }
 
-        if !current.is_empty() && (line_chars + wlen > max_chars || line_units + wunits > max_units)
+        if !current.is_empty()
+            && (line_chars + wlen > max_chars || line_units + wunits > max_units)
+            && !should_keep_with_previous(&w.text)
         {
-            lines.push(current);
-            current = Vec::new();
-            line_chars = 0;
-            line_units = 0;
+            push_line_carrying_polite_prefix(
+                &mut lines,
+                &mut current,
+                &mut line_chars,
+                &mut line_units,
+            );
         }
         current.push(w.clone());
         line_chars += wlen;
@@ -328,7 +427,7 @@ pub fn generate(
         "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding"
     );
     let margin_h = settings.play_res_x / 20;
-    let safe_line_units = ((settings.play_res_x as u64 * 90 * 100)
+    let safe_line_units = ((settings.play_res_x as u64 * 98 * 100)
         / (100 * settings.font_size.max(1) as u64))
         .max(1) as u32;
     let max_line_chars = if settings.vertical {
@@ -619,7 +718,15 @@ pub fn generate(
                 let x = (manual_x as i32 - col as i32 * col_step as i32).max(0);
                 format!("{{\\pos({},{})}}", x, manual_y)
             } else if manual_position {
-                format!("{{\\pos({},{})}}", manual_x, manual_y)
+                let row = line_count % max_lines;
+                let y = offset_coord(
+                    manual_y,
+                    settings.font_size + line_spacing,
+                    row,
+                    -1,
+                    settings.play_res_y,
+                );
+                format!("{{\\pos({},{})}}", manual_x, y)
             } else if stacking_mode && settings.vertical {
                 // Stacking columns right to left
                 let x = (settings.play_res_x as i32
@@ -714,6 +821,15 @@ mod tests {
         }
     }
 
+    fn seg(text: &str, start: f64, end: f64) -> Segment {
+        Segment {
+            start,
+            end,
+            text: text.to_string(),
+            tokens: Vec::new(),
+        }
+    }
+
     #[test]
     fn format_ass_time_zero() {
         assert_eq!(format_ass_time(0.0), "0:00:00.00");
@@ -780,6 +896,84 @@ mod tests {
         assert_eq!(lines.len(), 2);
         assert_eq!(words_to_text(&lines[0]), "長い字幕");
         assert_eq!(words_to_text(&lines[1]), "テキスト");
+    }
+
+    #[test]
+    fn split_into_lines_keeps_closing_punctuation_with_previous_line() {
+        let words = vec![
+            w("今日はいい", 0.0, 0.5),
+            w("天気です", 0.5, 0.8),
+            w("。", 0.8, 0.9),
+        ];
+        let lines = split_into_lines(&words, 20, 700);
+        assert_eq!(lines.len(), 2);
+        assert_eq!(words_to_text(&lines[0]), "今日はいい");
+        assert_eq!(words_to_text(&lines[1]), "天気です。");
+    }
+
+    #[test]
+    fn split_into_lines_keeps_short_kana_tail_with_previous_line() {
+        let words = vec![w("これで", 0.0, 0.5), w("す", 0.5, 0.6)];
+        let lines = split_into_lines(&words, 20, 300);
+        assert_eq!(lines.len(), 1);
+        assert_eq!(words_to_text(&lines[0]), "これです");
+    }
+
+    #[test]
+    fn split_into_lines_uses_relaxed_width_for_short_japanese_word() {
+        let words = vec![w("終わらせます", 0.0, 1.0)];
+        let lines = split_into_lines(&words, 20, 500);
+        assert_eq!(lines.len(), 1);
+        assert_eq!(words_to_text(&lines[0]), "終わらせます");
+    }
+
+    #[test]
+    fn split_into_lines_carries_go_prefix_to_next_line() {
+        let words = vec![w("ご", 0.0, 0.1), w("利用いただけます", 0.1, 1.0)];
+        let lines = split_into_lines(&words, 20, 700);
+        assert_eq!(lines.len(), 1);
+        assert_eq!(words_to_text(&lines[0]), "ご利用いただけます");
+    }
+
+    #[test]
+    fn split_into_lines_carries_o_prefix_from_end_of_previous_line() {
+        let words = vec![
+            w("本日は", 0.0, 0.3),
+            w("お", 0.3, 0.4),
+            w("買い上げ", 0.4, 0.9),
+        ];
+        let lines = split_into_lines(&words, 20, 500);
+        assert_eq!(lines.len(), 2);
+        assert_eq!(words_to_text(&lines[0]), "本日は");
+        assert_eq!(words_to_text(&lines[1]), "お買い上げ");
+    }
+
+    #[test]
+    fn manual_horizontal_position_offsets_simultaneous_lines() {
+        let segments = vec![
+            (seg("first", 0.0, 2.0), vec![w("first", 0.0, 2.0)]),
+            (seg("second", 0.5, 2.5), vec![w("second", 0.5, 2.5)]),
+        ];
+        let mut settings = Settings::default();
+        settings.position_mode = "manual".to_string();
+        settings.highlight_style = "none".to_string();
+        settings.max_simultaneous_lines = 2;
+        settings.font_size = 100;
+        settings.play_res_x = 1000;
+        settings.play_res_y = 1000;
+        settings.subtitle_x_pct = 50.0;
+        settings.subtitle_y_pct = 50.0;
+
+        let output_path = std::env::temp_dir().join(format!(
+            "lumimi-manual-position-test-{}.ass",
+            std::process::id()
+        ));
+        generate(&segments, &output_path.to_string_lossy(), &settings, None).unwrap();
+        let content = std::fs::read_to_string(&output_path).unwrap();
+        let _ = std::fs::remove_file(output_path);
+
+        assert!(content.contains("{\\pos(500,500)}first"), "{content}");
+        assert!(content.contains("{\\pos(500,380)}second"), "{content}");
     }
 
     #[test]
