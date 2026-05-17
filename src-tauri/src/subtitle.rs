@@ -82,37 +82,123 @@ fn is_word_build_left_mode(display_mode: &str) -> bool {
     display_mode == "word_build_left"
 }
 
-// Split words into lines of at most max_chars characters each.
-// Returns slices into the original slice.
-fn split_into_lines(words: &[Word], max_chars: usize) -> Vec<&[Word]> {
-    let mut lines = Vec::new();
-    let mut start = 0;
-    let mut line_chars: usize = 0;
-
-    for (i, w) in words.iter().enumerate() {
-        let wlen = w.text.chars().count();
-        if line_chars > 0 && line_chars + wlen > max_chars {
-            lines.push(&words[start..i]);
-            start = i;
-            line_chars = 0;
-        }
-        line_chars += wlen;
+fn ass_char_width_units(ch: char) -> u32 {
+    if ch.is_ascii_whitespace() {
+        35
+    } else if ch.is_ascii() || ('\u{FF61}'..='\u{FF9F}').contains(&ch) {
+        60
+    } else {
+        100
     }
-    if start < words.len() {
-        lines.push(&words[start..]);
+}
+
+fn ass_text_width_units(text: &str) -> u32 {
+    text.chars().map(ass_char_width_units).sum()
+}
+
+fn split_word_by_width(word: &Word, max_units: u32) -> Vec<Word> {
+    let chars: Vec<char> = word.text.chars().collect();
+    if chars.len() <= 1 || ass_text_width_units(&word.text) <= max_units {
+        return vec![word.clone()];
+    }
+
+    let max_units = max_units.max(1);
+    let duration = (word.end - word.start).max(0.0);
+    let total_chars = chars.len() as f64;
+    let mut chunks = Vec::new();
+    let mut chunk = String::new();
+    let mut chunk_units = 0u32;
+    let mut chunk_start_idx = 0usize;
+
+    for (idx, ch) in chars.iter().enumerate() {
+        let units = ass_char_width_units(*ch);
+        if !chunk.is_empty() && chunk_units + units > max_units {
+            let start = word.start + duration * (chunk_start_idx as f64 / total_chars);
+            let end = word.start + duration * (idx as f64 / total_chars);
+            chunks.push(Word {
+                text: chunk,
+                start,
+                end,
+            });
+            chunk = String::new();
+            chunk_units = 0;
+            chunk_start_idx = idx;
+        }
+        chunk.push(*ch);
+        chunk_units += units;
+    }
+
+    if !chunk.is_empty() {
+        let start = word.start + duration * (chunk_start_idx as f64 / total_chars);
+        chunks.push(Word {
+            text: chunk,
+            start,
+            end: word.end,
+        });
+    }
+
+    chunks
+}
+
+// Split words into lines constrained by both character count and rendered width.
+fn split_into_lines(words: &[Word], max_chars: usize, max_units: u32) -> Vec<Vec<Word>> {
+    let mut lines = Vec::new();
+    let mut current = Vec::new();
+    let mut line_chars: usize = 0;
+    let mut line_units: u32 = 0;
+
+    let max_chars = max_chars.max(1);
+    let max_units = max_units.max(1);
+
+    for w in words {
+        let wlen = w.text.chars().count();
+        let wunits = ass_text_width_units(&w.text);
+        if wunits > max_units {
+            for part in split_word_by_width(w, max_units) {
+                let plen = part.text.chars().count();
+                let punits = ass_text_width_units(&part.text);
+                if !current.is_empty()
+                    && (line_chars + plen > max_chars || line_units + punits > max_units)
+                {
+                    lines.push(current);
+                    current = Vec::new();
+                    line_chars = 0;
+                    line_units = 0;
+                }
+                current.push(part);
+                line_chars += plen;
+                line_units += punits;
+            }
+            continue;
+        }
+
+        if !current.is_empty() && (line_chars + wlen > max_chars || line_units + wunits > max_units)
+        {
+            lines.push(current);
+            current = Vec::new();
+            line_chars = 0;
+            line_units = 0;
+        }
+        current.push(w.clone());
+        line_chars += wlen;
+        line_units += wunits;
+    }
+    if !current.is_empty() {
+        lines.push(current);
     }
     lines
 }
 
-fn split_for_display_mode<'a>(
-    words: &'a [Word],
+fn split_for_display_mode(
+    words: &[Word],
     max_chars: usize,
+    max_units: u32,
     display_mode: &str,
-) -> Vec<&'a [Word]> {
+) -> Vec<Vec<Word>> {
     if is_word_popup_mode(display_mode) {
-        (0..words.len()).map(|i| &words[i..i + 1]).collect()
+        words.iter().cloned().map(|w| vec![w]).collect()
     } else {
-        split_into_lines(words, max_chars)
+        split_into_lines(words, max_chars, max_units)
     }
 }
 
@@ -241,7 +327,10 @@ pub fn generate(
         content,
         "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding"
     );
-    let margin_h = settings.play_res_x / 10;
+    let margin_h = settings.play_res_x / 20;
+    let safe_line_units = ((settings.play_res_x as u64 * 90 * 100)
+        / (100 * settings.font_size.max(1) as u64))
+        .max(1) as u32;
     let max_line_chars = if settings.vertical {
         // Vertical columns must fit within the screen height regardless of the user-set value.
         // A 15-char default × 144px/char = 2160px overflows a 1920px portrait screen, which
@@ -256,7 +345,7 @@ pub fn generate(
     } else if settings.max_chars_per_line > 0 {
         settings.max_chars_per_line as usize
     } else {
-        ((settings.play_res_x - 2 * margin_h) / settings.font_size).max(5) as usize
+        safe_line_units.max(5) as usize
     };
     // Dim styles: unspoken words rendered at 50% opacity via SecondaryColour alpha.
     let secondary_color =
@@ -381,7 +470,12 @@ pub fn generate(
             continue;
         }
 
-        for line_words in split_for_display_mode(words, max_line_chars, &settings.display_mode) {
+        for line_words in split_for_display_mode(
+            words,
+            max_line_chars,
+            safe_line_units,
+            &settings.display_mode,
+        ) {
             if line_words.is_empty() {
                 continue;
             }
@@ -394,7 +488,7 @@ pub fn generate(
                 // with \alpha&HFF& so ASS always centers on the complete line length.
                 emit_build_left_line(
                     &mut content,
-                    line_words,
+                    &line_words,
                     settings.hold_s,
                     max_lines,
                     manual_position,
@@ -409,7 +503,7 @@ pub fn generate(
             if word_build_mode && !stacking_mode {
                 emit_build_line(
                     &mut content,
-                    line_words,
+                    &line_words,
                     settings.hold_s,
                     max_lines,
                     manual_position,
@@ -453,7 +547,7 @@ pub fn generate(
                     vertical_anchor_y
                 };
                 let diag_start = first.start.max(0.0);
-                let text = words_to_text(line_words);
+                let text = words_to_text(&line_words);
                 let chars: Vec<char> = text.chars().collect();
                 let n = chars.len() as u32;
                 let char_h = settings.font_size + settings.font_size / 5;
@@ -480,14 +574,14 @@ pub fn generate(
                 // No timing constraint — lines appear when spoken and never disappear.
                 let (ds, karo) = if settings.highlight_style == "none" {
                     let ds = first.start.max(0.0);
-                    let text = words_to_text(line_words);
+                    let text = words_to_text(&line_words);
                     (ds, text)
                 } else {
                     let ds = (first.start - settings.pre_show_s).max(0.0);
                     let actual_pre = (first.start - ds).max(0.0);
                     (
                         ds,
-                        words_to_karaoke(line_words, actual_pre, &settings.highlight_style),
+                        words_to_karaoke(&line_words, actual_pre, &settings.highlight_style),
                     )
                 };
                 (ds, stack_end, karo)
@@ -500,7 +594,7 @@ pub fn generate(
                 };
                 let (ds, karo) = if settings.highlight_style == "none" {
                     let ds = first.start.max(0.0).max(min_start);
-                    let text = words_to_text(line_words);
+                    let text = words_to_text(&line_words);
                     (ds, text)
                 } else {
                     let natural_start = (first.start - settings.pre_show_s).max(0.0);
@@ -508,7 +602,7 @@ pub fn generate(
                     let actual_pre = (first.start - ds).max(0.0);
                     (
                         ds,
-                        words_to_karaoke(line_words, actual_pre, &settings.highlight_style),
+                        words_to_karaoke(&line_words, actual_pre, &settings.highlight_style),
                     )
                 };
                 (ds, diag_end, karo)
@@ -650,7 +744,7 @@ mod tests {
     #[test]
     fn split_into_lines_single_chunk_under_limit() {
         let words = vec![w("Hello", 0.0, 0.5), w("World", 0.5, 1.0)];
-        let lines = split_into_lines(&words, 20);
+        let lines = split_into_lines(&words, 20, 2_000);
         assert_eq!(lines.len(), 1);
         assert_eq!(lines[0].len(), 2);
     }
@@ -663,11 +757,29 @@ mod tests {
             w("World", 0.5, 1.0),
             w("Foo", 1.0, 1.5),
         ];
-        let lines = split_into_lines(&words, 6);
+        let lines = split_into_lines(&words, 6, 2_000);
         assert_eq!(lines.len(), 3);
         assert_eq!(lines[0][0].text, "Hello");
         assert_eq!(lines[1][0].text, "World");
         assert_eq!(lines[2][0].text, "Foo");
+    }
+
+    #[test]
+    fn split_into_lines_breaks_at_safe_width() {
+        let words = vec![w("今日は", 0.0, 0.5), w("いい天気", 0.5, 1.0)];
+        let lines = split_into_lines(&words, 20, 500);
+        assert_eq!(lines.len(), 2);
+        assert_eq!(words_to_text(&lines[0]), "今日は");
+        assert_eq!(words_to_text(&lines[1]), "いい天気");
+    }
+
+    #[test]
+    fn split_into_lines_splits_single_long_word_by_safe_width() {
+        let words = vec![w("長い字幕テキスト", 0.0, 1.0)];
+        let lines = split_into_lines(&words, 20, 400);
+        assert_eq!(lines.len(), 2);
+        assert_eq!(words_to_text(&lines[0]), "長い字幕");
+        assert_eq!(words_to_text(&lines[1]), "テキスト");
     }
 
     #[test]

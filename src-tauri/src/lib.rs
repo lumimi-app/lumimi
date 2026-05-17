@@ -164,7 +164,7 @@ fn run_pipeline(
 
     let model_path = resolve_resource_path(app, &settings.model_path);
     let ffmpeg_path = resolve_resource_path(app, "bin/ffmpeg.exe");
-    let fonts_dir = resolve_resource_dir(app, "fonts");
+    let bundled_fonts_dir = resolve_resource_dir(app, "fonts");
     let video_info = detect_video_info(video_path, &ffmpeg_path).ok();
 
     eprintln!("[DIAG] model_path={}", model_path);
@@ -294,7 +294,12 @@ fn run_pipeline(
         })
         .collect();
 
-    let subtitle_settings = adjusted_subtitle_settings(settings, video_info.as_ref());
+    let mut subtitle_settings = adjusted_subtitle_settings(settings, video_info.as_ref());
+    subtitle_settings.font_name = resolve_ass_font_name(
+        &subtitle_settings.font_name,
+        subtitle_settings.font_weight,
+        bundled_fonts_dir.as_deref(),
+    );
     subtitle::generate(
         &segments,
         &ass_path.to_string_lossy(),
@@ -306,6 +311,11 @@ fn run_pipeline(
     check_cancelled(&cancel)?;
     let output_path =
         output_path.ok_or_else(|| anyhow::anyhow!("Video output path was not prepared"))?;
+    let fonts_dir = prepare_render_fonts_dir(
+        &temp_dir,
+        &subtitle_settings.font_name,
+        bundled_fonts_dir.as_deref(),
+    );
     render::run(
         video_path,
         &ass_path.to_string_lossy(),
@@ -651,6 +661,166 @@ fn resolve_resource_path(app: &tauri::AppHandle, configured_path: &str) -> Strin
         .to_string()
 }
 
+fn copy_font_file(src: &Path, dest_dir: &Path) -> bool {
+    if !src.is_file() {
+        return false;
+    }
+    let Some(name) = src.file_name() else {
+        return false;
+    };
+    std::fs::copy(src, dest_dir.join(name)).is_ok()
+}
+
+fn read_u16_be(bytes: &[u8], offset: usize) -> Option<u16> {
+    Some(u16::from_be_bytes([
+        *bytes.get(offset)?,
+        *bytes.get(offset + 1)?,
+    ]))
+}
+
+fn read_u32_be(bytes: &[u8], offset: usize) -> Option<u32> {
+    Some(u32::from_be_bytes([
+        *bytes.get(offset)?,
+        *bytes.get(offset + 1)?,
+        *bytes.get(offset + 2)?,
+        *bytes.get(offset + 3)?,
+    ]))
+}
+
+fn decode_font_name(bytes: &[u8], platform_id: u16) -> Option<String> {
+    let value = if platform_id == 0 || platform_id == 3 {
+        if bytes.len() % 2 != 0 {
+            return None;
+        }
+        String::from_utf16(
+            &bytes
+                .chunks_exact(2)
+                .map(|pair| u16::from_be_bytes([pair[0], pair[1]]))
+                .collect::<Vec<_>>(),
+        )
+        .ok()?
+    } else {
+        bytes.iter().map(|b| *b as char).collect()
+    };
+    let trimmed = value.trim_matches(char::from(0)).trim().to_string();
+    (!trimmed.is_empty()).then_some(trimmed)
+}
+
+fn font_full_name(path: &Path) -> Option<String> {
+    let bytes = std::fs::read(path).ok()?;
+    let table_count = read_u16_be(&bytes, 4)? as usize;
+    let mut name_table_offset = None;
+    for idx in 0..table_count {
+        let record = 12 + idx * 16;
+        if bytes.get(record..record + 4)? == b"name" {
+            name_table_offset = Some(read_u32_be(&bytes, record + 8)? as usize);
+            break;
+        }
+    }
+    let name_offset = name_table_offset?;
+    let name_count = read_u16_be(&bytes, name_offset + 2)? as usize;
+    let storage_offset = name_offset + read_u16_be(&bytes, name_offset + 4)? as usize;
+    let mut fallback = None;
+
+    for idx in 0..name_count {
+        let record = name_offset + 6 + idx * 12;
+        let platform_id = read_u16_be(&bytes, record)?;
+        let language_id = read_u16_be(&bytes, record + 4)?;
+        let name_id = read_u16_be(&bytes, record + 6)?;
+        if name_id != 4 {
+            continue;
+        }
+        let len = read_u16_be(&bytes, record + 8)? as usize;
+        let offset = storage_offset + read_u16_be(&bytes, record + 10)? as usize;
+        let raw = bytes.get(offset..offset + len)?;
+        let decoded = decode_font_name(raw, platform_id)?;
+        if platform_id == 3 && language_id == 0x0409 {
+            return Some(decoded);
+        }
+        fallback.get_or_insert(decoded);
+    }
+
+    fallback
+}
+
+fn resolve_ass_font_name(
+    font_name: &str,
+    font_weight: i32,
+    bundled_fonts_dir: Option<&str>,
+) -> String {
+    let wanted = font_name.trim();
+    let desired_weight = if font_weight != 0 { 700i32 } else { 400i32 };
+    let mut db = fontdb::Database::new();
+    db.load_system_fonts();
+    if let Some(dir) = bundled_fonts_dir {
+        db.load_fonts_dir(dir);
+    }
+
+    db.faces()
+        .filter(|face| {
+            face.families.iter().any(|(name, _)| name == wanted) || face.post_script_name == wanted
+        })
+        .filter_map(|face| {
+            let path = match &face.source {
+                fontdb::Source::File(path) => path,
+                fontdb::Source::SharedFile(path, _) => path,
+                _ => return None,
+            };
+            let full_name = font_full_name(path)?;
+            let distance = (face.weight.0 as i32 - desired_weight).abs();
+            Some((distance, full_name))
+        })
+        .min_by_key(|(distance, _)| *distance)
+        .map(|(_, name)| name)
+        .unwrap_or_else(|| wanted.to_string())
+}
+
+fn prepare_render_fonts_dir(
+    temp_dir: &Path,
+    font_name: &str,
+    bundled_fonts_dir: Option<&str>,
+) -> Option<String> {
+    let render_fonts_dir = temp_dir.join("lumi_render_fonts_src");
+    if std::fs::create_dir_all(&render_fonts_dir).is_err() {
+        return bundled_fonts_dir.map(str::to_string);
+    }
+
+    let mut copied_any = false;
+    if let Some(dir) = bundled_fonts_dir {
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                copied_any |= copy_font_file(&entry.path(), &render_fonts_dir);
+            }
+        }
+    }
+
+    let mut db = fontdb::Database::new();
+    db.load_system_fonts();
+    if let Some(dir) = bundled_fonts_dir {
+        db.load_fonts_dir(dir);
+    }
+    let wanted = font_name.trim();
+    for face in db.faces() {
+        let family_match = face.families.iter().any(|(name, _)| name == wanted);
+        let postscript_match = face.post_script_name == wanted;
+        let path = match &face.source {
+            fontdb::Source::File(path) => path,
+            fontdb::Source::SharedFile(path, _) => path,
+            _ => continue,
+        };
+        let full_name_match = font_full_name(path).as_deref() == Some(wanted);
+        if family_match || postscript_match || full_name_match {
+            copied_any |= copy_font_file(path, &render_fonts_dir);
+        }
+    }
+
+    if copied_any {
+        Some(render_fonts_dir.to_string_lossy().to_string())
+    } else {
+        bundled_fonts_dir.map(str::to_string)
+    }
+}
+
 #[derive(serde::Serialize)]
 struct ModelInfo {
     path: String,
@@ -994,6 +1164,26 @@ Stream #0:0: Video: h264, yuv420p, 1920x1080, 30 fps
         assert!(!sanitized.contains(&current_dir));
         assert!(sanitized.contains("<app-dir>") || sanitized.contains("%USERPROFILE%"));
         assert!(!sanitized.contains("\r\n"));
+    }
+
+    #[test]
+    fn reads_bundled_font_full_name() {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("fonts")
+            .join("GenEiKiwamiGo.ttf");
+        assert_eq!(
+            font_full_name(&path).as_deref(),
+            Some("GenEi Kiwami Gothic Ultra")
+        );
+    }
+
+    #[test]
+    fn resolves_typographic_family_to_ass_full_name() {
+        let fonts_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fonts");
+        assert_eq!(
+            resolve_ass_font_name("GenEi Kiwami Gothic", 0, Some(&fonts_dir.to_string_lossy())),
+            "GenEi Kiwami Gothic Ultra"
+        );
     }
 
     #[test]
